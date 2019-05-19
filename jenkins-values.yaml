@@ -1,0 +1,41 @@
+master:
+  imageTag: lts
+  cpu: 500m
+  memory: 512Mi
+  hostName: jenkins.region.test.domain.net
+  serviceType: ClusterIP
+  serviceAnnotations:
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+  installPlugins:
+    - amazon-ecr:1.6
+    - ansicolor:0.6.2
+    - aws-credentials:1.27
+    - blueocean:1.16.0
+    - credentials-binding:1.18
+    - git:3.10.0
+    - google-login:1.4
+    - kubernetes:1.15.4
+    - pipeline-graph-analysis:1.10
+    - thinBackup:1.9
+    - workflow-job:2.32
+
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+    hostName: jenkins.region.test.domain.net
+
+  scriptApproval:
+    - "method groovy.json.JsonSlurperClassic parseText java.lang.String"
+    - "method java.util.Collection toArray"
+    - "new groovy.json.JsonSlurperClassic"
+
+agent:
+  enabled: false
+
+networkPolicy:
+  apiVersion: networking.k8s.io/v1
+
+rbac:
+  create: true
+
