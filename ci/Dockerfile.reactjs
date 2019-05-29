@@ -1,0 +1,30 @@
+ARG NODE_VER=8.15-slim
+
+# ----- node build -----
+FROM node:${NODE_VER} AS build
+
+# Add build ARGs here, leave runtime ENV for helm deployment
+ARG APP_ENV=STAGING
+ARG SITE_HOST=http://localhost:3000
+
+# Create app directory and copy everything for build
+WORKDIR /prep
+COPY . .
+
+RUN npm install
+RUN npm run build
+
+# ----- node release -----
+FROM node:${NODE_VER}
+
+# Only copy release files from build
+WORKDIR /usr/src/app
+COPY --from=build /prep/buildClient ./buildClient
+COPY --from=build /prep/buildServer ./buildServer
+COPY --from=build /prep/node_modules ./node_modules
+COPY --from=build /prep/server ./server
+COPY --from=build /prep/src ./src
+COPY --from=build /prep/webpack ./webpack
+
+EXPOSE 3000
+CMD ["node", "buildServer/index.js"]

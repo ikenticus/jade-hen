@@ -1,0 +1,47 @@
+ARG NODE_VER=latest
+
+# ----- node deps -----
+FROM node:${NODE_VER} AS deps
+
+# declare arguments
+ARG TEAM
+ARG VERSION
+ARG APP_NAME
+
+# create workspace
+WORKDIR /opt/${APP_NAME}
+COPY package.json .npmrc /opt/${APP_NAME}/
+
+# install node packages
+RUN npm install --only=production
+
+# ---- node release ----
+FROM node:${NODE_VER} AS release
+
+# declare arguments
+ARG TEAM
+ARG VERSION
+ARG APP_NAME
+
+# set environment
+ENV NODE_USER node
+ENV APP_NAME=${APP_NAME}
+LABEL maintainer=${TEAM}@domain.com version=${VERSION}
+
+# create workspace
+WORKDIR /opt/${APP_NAME}
+COPY package.json main.js newrelic.js .npmrc /opt/${APP_NAME}/
+COPY lib /opt/${APP_NAME}/lib
+COPY views /opt/${APP_NAME}/views
+COPY config /opt/${APP_NAME}/config
+COPY swagger /opt/${APP_NAME}/swagger
+COPY --from=deps /opt/${APP_NAME}/node_modules ./node_modules
+
+# create user
+RUN useradd -ms /bin/bash ${NODE_USER}
+RUN chown -R ${NODE_USER}:${NODE_USER} /opt/${APP_NAME}
+USER ${NODE_USER}
+
+# launch app
+EXPOSE 3000
+CMD ["npm", "index.js"]

@@ -1,0 +1,7 @@
+FROM paas-docker-artifactory.gannettdigital.com/paas-scratch-base:latest
+MAINTAINER Domain Team <team@domain.com>
+
+COPY app-name /
+
+EXPOSE 8080
+CMD [ "/app-name"]

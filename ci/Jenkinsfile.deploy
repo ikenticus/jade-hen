@@ -1,0 +1,12 @@
+#!/usr/bin/env groovy
+
+@Library('shared-pipeline') _
+
+ansiColor('xterm') {
+    appDeploy appName: 'app-sample',
+        namespace: params.namespace,
+        version: params.version,
+        helmArgs: [
+            'image.tag': 'v9.0.0'
+        ]
+}

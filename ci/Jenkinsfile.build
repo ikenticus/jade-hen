@@ -1,0 +1,20 @@
+#!/usr/bin/env groovy
+
+@Library('shared-pipeline') _
+
+ansiColor('xterm') {
+
+    def dockerBuildArgs = { opts ->
+        opts.buildArgs.APP_VER = opts.nextVersion
+        if (opts.namespace == 'test') {
+            opts.buildArgs.SITE_HOST = "http://${opts.appName}-${opts.version}.${opts.region}.${opts.domain}"
+        }
+    }
+
+    appBuild appName: 'app-sample'
+        dockerBuildArgs: dockerBuildArgs,
+        buildArgs: [
+            MYSQL_PORT: '3306'
+        ],
+        pushGitTags: true
+}

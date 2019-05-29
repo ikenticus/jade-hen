@@ -1,0 +1,5 @@
+
+environment:
+  secretKeyRef: domain-secret-live
+  app_env: PROD
+  site_host: https://www.domain.com

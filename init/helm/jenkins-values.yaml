@@ -1,0 +1,53 @@
+master:
+  imageTag: lts
+  cpu: 500m
+  memory: 512Mi
+  hostName: jenkins.$REGION.test.domain.net
+  serviceType: ClusterIP
+  serviceAnnotations:
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+  installPlugins:
+    - amazon-ecr:1.6
+    - ansicolor:0.6.2
+    - aws-credentials:1.27
+    - blueocean:1.16.0
+    - credentials-binding:1.19
+    - git:3.10.0
+    - google-login:1.4
+    - kubernetes:1.15.5
+    - pipeline-graph-analysis:1.10
+    - pipeline-stage-view:2.11
+    - ssh-agent:1.17
+    - thinBackup:1.9
+    - workflow-job:2.32
+
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+#      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+#      nginx.ingress.kubernetes.io/add-base-url: "true"
+    hostName: jenkins.$REGION.test.domain.net
+
+  scriptApproval:
+    - "method groovy.json.JsonSlurperClassic parseText java.lang.String"
+    - "method groovy.lang.GroovyObject invokeMethod java.lang.String java.lang.Object"
+    - "method hudson.plugins.git.GitSCM getBranches"
+    - "method hudson.plugins.git.GitSCM getUserRemoteConfigs"
+    - "method hudson.plugins.git.GitSCMBackwardCompatibility getExtensions"
+    - "method java.text.DateFormat parse java.lang.String"
+    - "method java.util.Collection toArray"
+    - "new java.util.LinkedHashMap"
+    - "new groovy.json.JsonSlurperClassic"
+    - "staticMethod org.codehaus.groovy.runtime.DateGroovyMethods minus java.util.Date int"
+    - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods println java.lang.Object java.lang.Object"
+    - "staticMethod org.codehaus.groovy.transform.ImmutableASTTransformation checkPropNames java.lang.Object java.util.Map"
+
+agent:
+  enabled: false
+
+networkPolicy:
+  apiVersion: networking.k8s.io/v1
+
+rbac:
+  create: true
