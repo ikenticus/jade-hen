@@ -3,10 +3,23 @@
 @Library('shared-pipeline') _
 
 ansiColor('xterm') {
+
+    def postDeploy = { opts ->
+        if (opts.namespace != 'test') {
+            recache = sh (
+                returnStdout: true,
+                script: "curl https://cahce-buster.domain.net"
+            ).trim()
+            println recache
+        }
+    }
+
     appDeploy appName: 'app-sample',
+        jnlpResCpu: '500m', jnlpResMem: '1Gi',
         namespace: params.namespace,
         version: params.version,
         helmArgs: [
             'image.tag': 'v9.0.0'
-        ]
+        ],
+        postDeploy: postDeploy
 }

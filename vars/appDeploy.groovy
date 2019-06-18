@@ -63,6 +63,10 @@ def call(Map args) {
                         throw e
                     }
                 }
+            }
+
+            stage('Post Tasks') {
+                args.postDeploy ? args.postDeploy.call(opts) : _postDeploy(opts)
                 if (opts.namespace == 'staging') {
                     try {
                         input "Deploy ${opts.version} to Production?"
@@ -75,10 +79,6 @@ def call(Map args) {
                         echo "Deployed ${opts.version} to Staging, skipped Production"
                     }
                 }
-            }
-
-            stage('Post Tasks') {
-                args.postDeploy ? args.postDeploy.call(opts) : _postDeploy(opts)
             }
         }
     }
