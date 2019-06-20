@@ -8,7 +8,7 @@ ansiColor('xterm') {
         if (opts.namespace != 'test') {
             recache = sh (
                 returnStdout: true,
-                script: "curl https://cahce-buster.domain.net"
+                script: "curl https://cache-buster.domain.net"
             ).trim()
             println recache
         }

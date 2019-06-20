@@ -1,0 +1,10 @@
+
+replicaCount: 2#nodes
+
+image:
+  repository: AWSID.dkr.ecr.REGION.amazonaws.com/REPO/SUB
+  tag: latest
+
+environment:
+  bucket: project-s3-bucket
+  region: us-east-5
