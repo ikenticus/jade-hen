@@ -41,7 +41,7 @@ def call(Map args) {
                     def oldVersion = new SemVer(topTag)
                     opts.nextVersion = oldVersion.bump(topText).toString()
 
-                    if (env.BRANCH_NAME == 'master') {
+                    if (env.BRANCH_NAME == opts.master) {
                         opts.flag = 'live'
                         opts.namespace = 'staging'
                         opts.version = opts.nextVersion
@@ -65,7 +65,7 @@ def call(Map args) {
                         //sh "docker images"
                     }
 
-                    if (opts.pushGitTags && env.BRANCH_NAME == 'master') {
+                    if (opts.pushGitTags && env.BRANCH_NAME == opts.master) {
                         withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-https',
                             usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD']]
                         ) {
@@ -99,6 +99,7 @@ Map _buildOpts(Map args) {
         buildArgs: args.buildArgs ?: [:],
         domain: args.domain ?: opts.domain,
         flag: args.flag ?: 'test',
+        master: args.master ?: opts.master,
         namespace: args.namespace ?: 'test',
         region: args.region ?: opts.region,
         version: args.version ?: 'latest',

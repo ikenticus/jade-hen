@@ -32,7 +32,7 @@ def call(Map args) {
         node ('jenkins-slave-helm') {
             stage('Checkout') {
                 deleteDir()
-                def branch = 'master'
+                def branch = opts.master
                 if (opts.namespace == 'test') {
                     branch = opts.version
                 }
@@ -53,8 +53,8 @@ def call(Map args) {
                         }
                         def values = opts.helmValues.collect { key, value -> "${key}=${value}" }.join(',')
                         sh """
-                            helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --install \
-                            --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
+                            helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
+                            --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
                     } catch (e) {
                         println "Failed to install/upgrade helm chart: ${e.message}"
@@ -109,6 +109,7 @@ Map _deployOpts(Map args) {
     }
 
     return [
+        master: args.master ?: opts.master,
         namespace: args.namespace ?: 'test',
         version: args.version,
 

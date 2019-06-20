@@ -1,0 +1,43 @@
+#!/usr/bin/env groovy
+
+properties([
+    disableConcurrentBuilds(),
+    parameters([
+        choice(description: 'Namespace',
+               name: 'namespace',
+               choices: [
+                    'default',
+                    'test',
+                    'staging',
+                    'production',
+                ]
+        ),
+        string(description: 'Release', name: 'release', defaultValue: 's3fs'),
+        string(description: 'Command', name: 'command', defaultValue: 'ls -la'),
+    ])
+])
+
+podTemplate(label: 'jenkins-slave', containers: [
+containerTemplate(name: 'jnlp', image: 'jorgeacetozi/jenkins-slave-kubectl:latest',
+                    args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
+                    resourceRequestCpu: '200m', resourceLimitCpu: '300m',
+                    resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi')
+]) {
+    node ('jenkins-slave') {
+        stage('List All Pods') {
+            sh "kubectl get pods -n ${params.namespace}"
+        }
+
+        stage('Run Command') {
+            def releases = sh (
+                returnStdout: true,
+                script: "kubectl get pods -n ${params.namespace} --selector=app.kubernetes.io/instance=${params.release} -o name"
+            ).trim()
+            def pods = releases.split('\n')
+            for (i = 0; i < pods.size(); i++) {
+                def pod = pods[i].split('/')[-1]
+                sh "kubectl exec -it ${pod} -n ${params.namespace} -- ${params.command}"
+            }
+        }
+    }
+}

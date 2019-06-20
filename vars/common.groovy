@@ -11,12 +11,18 @@ def podOpts() {
         helmImage: 'alpine/helm',
         helmVersion: '2.12.3',
 
-        jnlpImage: 'jenkins/jnlp-slave',
+        jnlpImage: 'jorgeacetozi/jenkins-slave-kubectl',
+        jnlpVersion: 'latest',
+
+        /*
+            jnlpImage: 'jenkins/jnlp-slave',
+            jnlpVersion: 'latest-jdk11',
+         */
+
         jnlpReqCpu: '200m',
         jnlpReqMem: '256Mi',
         jnlpResCpu: '300m',
         jnlpResMem: '512Mi',
-        jnlpVersion: 'latest-jdk11',
         jnlpWorkDir: '/home/jenkins',
 
         pushGitTags: false,
