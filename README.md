@@ -157,11 +157,20 @@ aws iam attach-role-policy --role-name eksctl-test-nodegroup-node36-NodeInstance
 
 ### <a id="kubectl"></a> kube-ctl
 
-Using `kubectl` you can install the various useful Kubernetes tools:
+Using `kubectl` you can install the various useful Kubernetes tools, like the dashboard:
 ```
-kubectl apply --filename https://raw.githubusercontent.com/kubernetes/heapster/master/deploy/kube-config/rbac/heapster-rbac.yaml
-kubectl apply --filename https://raw.githubusercontent.com/kubernetes/heapster/master/deploy/kube-config/standalone/heapster-controller.yaml
 kubectl create -f https://raw.githubusercontent.com/kubernetes/dashboard/master/aio/deploy/recommended/kubernetes-dashboard.yaml
+```
+
+Now that heapster was deprecated as of 1.13, install metrics-server:
+```
+DOWNLOAD_URL=$(curl --silent "https://api.github.com/repos/kubernetes-incubator/metrics-server/releases/latest" | jq -r .tarball_url)
+DOWNLOAD_VERSION=$(grep -o '[^/v]*$' <<< $DOWNLOAD_URL)
+curl -Ls $DOWNLOAD_URL -o metrics-server-$DOWNLOAD_VERSION.tar.gz
+mkdir metrics-server-$DOWNLOAD_VERSION
+tar -xzf metrics-server-$DOWNLOAD_VERSION.tar.gz --directory metrics-server-$DOWNLOAD_VERSION --strip-components 1
+kubectl apply -f metrics-server-$DOWNLOAD_VERSION/deploy/1.8+/
+kubectl get deployment metrics-server -n kube-system
 ```
 
 In order to create a specific namespace on the cluster, you should edit the `namespace.json` file and create using:
