@@ -110,3 +110,21 @@ nginx-ingress:
 
 jenkins:
 	helm install stable/jenkins --name jenkins --values init/helm/jenkins-values.yaml
+
+logs-cluster:
+	aws logs describe-log-groups --region ${REGION}
+	aws eks describe-cluster --name test --region ${REGION} | jq -r '.cluster.logging.clusterLogging'
+	aws eks update-cluster-config --name test --region ${REGION} \
+	    --logging '{"clusterLogging":[{"types":["api","audit","authenticator","controllerManager","scheduler"],"enabled":true}]}'
+	aws logs put-retention-policy --region ${REGION} --log-group-name /aws/eks/test/cluster --retention-in-days 3
+
+logs-console:
+	aws iam create-policy --policy-name k8s-logs --policy-document file://init/aws/k8s-logs.json
+	helm repo add incubator https://kubernetes-charts-incubator.storage.googleapis.com/
+	helm search fluentd-cloudwatch
+	helm install --name fluentd incubator/fluentd-cloudwatch \
+	 --set awsRole=arn:aws:iam::${AWS_ID}:role/k8s-logs,awsRegion=${REGION},rbac.create=true
+	aws logs put-retention-policy --region ${REGION} --log-group-name kubernetes --retention-in-days 7
+
+test:
+	echo Test

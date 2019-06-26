@@ -68,15 +68,17 @@ def call(Map args) {
             stage('Post Tasks') {
                 args.postDeploy ? args.postDeploy.call(opts) : _postDeploy(opts)
                 if (opts.namespace == 'staging') {
-                    try {
-                        input "Deploy ${opts.version} to Production?"
-                        build job: env.JOB_BASE_NAME, wait: false, parameters: [
-                            string(name: 'namespace', value: 'production'),
-                            string(name: 'version', value: opts.version)
-                        ]
-                        println "Deployed ${opts.version} to Staging, approved for Production"
-                    } catch (e) {
-                        echo "Deployed ${opts.version} to Staging, skipped Production"
+                    timeout(time: 20, unit: 'HOURS') {
+                        try {
+                            input "Deploy ${opts.version} to Production?"
+                            build job: env.JOB_BASE_NAME, wait: false, parameters: [
+                                string(name: 'namespace', value: 'production'),
+                                string(name: 'version', value: opts.version)
+                            ]
+                            println "Deployed ${opts.version} to Staging, approved for Production"
+                        } catch (e) {
+                            echo "Deployed ${opts.version} to Staging, skipped Production"
+                        }
                     }
                 }
             }

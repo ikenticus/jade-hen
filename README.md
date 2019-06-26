@@ -17,12 +17,13 @@ but many of the ingredients may be reused in between the others:
 * [IAM](#iam) Credentials
 * [CodeCommit](#codecommit) SCM
 * [EKS](#eks) Kubernetes Cluster
-* [kubectl](#kubectl) Namespaces
+* [kubectl](#kubectl) (kubernetes control tool)
 * [nginx-ingress](#nginx) replacing Elastic Load Balancers
 * [external-dNS](#extdns) using Route53
 * [Jenkins](#jenkins) CI with Pods
 * [Docker](#docker) Containers
 * [Helm](#helm) Charts
+* [Logs](#logs) for Cluster and Pods
 
 
 ## Procedure
@@ -155,7 +156,7 @@ aws iam attach-role-policy --role-name eksctl-test-nodegroup-node36-NodeInstance
 ```
 
 
-### <a id="kubectl"></a> kube-ctl
+### <a id="kubectl"></a> kubectl
 
 Using `kubectl` you can install the various useful Kubernetes tools, like the dashboard:
 ```
@@ -289,3 +290,29 @@ Any docker `--build-arg` arguments can be passed to the `appBuild` as `buildArgs
 Each repository will have its own `ci/helm` charts to deploy to test/live environments. Existing helm charts are used above to deploy standardized versions of many of the apps in this project, so either clone of the various examples above or create your own with `helm create`. Obviously, `deployment` and `replica set` are taken care of almost automatically. Add `service` only if you plan on utilizing you limited supply of Elastic IP or Elastic Load Balancing quota, but the point of this project is to utilize the `nginx-ingress` to avoid all of that and `external-dns` to automatically update `Route53` during deployment so do not forget to include the `ingress` component.
 
 Like the docker `buildArgs` Map, overrides to helm can be passed to `appDeploy` via `helmArgs` or by creating a `ci/helm/example/overrides/branch-name.yaml` within the branch itself.
+
+
+### <a id="logs"></a> Logs
+
+For the cluster logs, just enable the appropriate fields in the CloudWatch:
+```
+aws logs describe-log-groups --region $REGION
+aws eks describe-cluster --name test --region $REGION | jq -r '.cluster.logging.clusterLogging'
+aws eks update-cluster-config --name test --region $REGION \
+    --logging '{"clusterLogging":[{"types":["api","audit","authenticator","controllerManager","scheduler"],"enabled":true}]}'
+```
+
+For the console logs from the pods, create the policy and deploy `fluentd-cloudwatch` from the Google incubator:
+```
+aws iam create-policy --policy-name k8s-logs --policy-document file://init/aws/k8s-logs.json
+helm repo add incubator https://kubernetes-charts-incubator.storage.googleapis.com/
+helm search fluentd-cloudwatch
+helm install --name fluentd incubator/fluentd-cloudwatch \
+ --set awsRole=arn:aws:iam::${AWS_ID}:role/k8s-logs,awsRegion=${REGION},rbac.create=true
+```
+
+To avoid CloudWatch growing uncontrollably, make sure to set the retentions as well:
+```
+$ aws logs put-retention-policy --region $REGION --log-group-name kubernetes --retention-in-days 7
+$ aws logs put-retention-policy --region $REGION --log-group-name /aws/eks/test/cluster --retention-in-days 3
+```
