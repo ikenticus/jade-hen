@@ -51,6 +51,7 @@ def call(Map args) {
                         if (fileExists(override)) {
                             opts.helmOverride = "-f ${override}"
                         }
+                        args.helmSetValues ? args.helmSetValues.call(opts) : _helmSetValues(opts)
                         def values = opts.helmValues.collect { key, value -> "${key}=${value}" }.join(',')
                         sh """
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
@@ -130,6 +131,15 @@ Map _deployOpts(Map args) {
         jnlpVersion: args.jnlpVersion ?: opts.jnlpVersion,
         jnlpWorkDir: args.jnlpWorkDir ?: opts.jnlpWorkDir,
     ]
+}
+
+def _helmSetValues(Map opts) {
+    def helmValues = [
+        'image.flag': args.flag ?: flag,
+        'image.tag': args.version,
+        'ingress.hosts[0]': fqdn,
+    ] << opts.helmValues
+    opts.helmValues = helmValues
 }
 
 def _postDeploy(Map opts) {
