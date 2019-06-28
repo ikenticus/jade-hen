@@ -8,7 +8,7 @@ properties([
     pipelineTriggers([cron('H 4 * * *')]),
     parameters([
         string(description: 'Namespace', name: 'namespace', defaultValue: 'test'),
-        string(description: 'Days back', name: 'days', defaultValue: '14'),
+        string(description: 'Days back', name: 'days', defaultValue: '7'),
     ])
 ])
 
@@ -26,18 +26,22 @@ podTemplate(label: 'jenkins-slave-helm', containers: [
                     def pastDate = new Date().minus(days.toInteger())
 
                     def helmList = sh(returnStdout: true, script: "helm list --namespace ${namespace} --output json").trim()
-                    def helmJson = new JsonSlurperClassic().parseText(helmList)
-                    for (i = 0; i < helmJson.Releases.size(); i++) {
-                        def helmChart = helmJson.Releases[i].Name
-                        def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
-                        def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
+                    try {
+                        def helmJson = new JsonSlurperClassic().parseText(helmList)
+                        for (i = 0; i < helmJson.Releases.size(); i++) {
+                            def helmChart = helmJson.Releases[i].Name
+                            def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
+                            def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
 
-                        if (helmDate < pastDate) {
-                            println "${helmChart} is OLDER than ${days} days"
-                            sh "helm delete ${helmChart} --purge"
-                        } else {
-                            println "${helmChart} is newer than ${days} days"
+                            if (helmDate < pastDate) {
+                                println "${helmChart} is OLDER than ${days} days"
+                                sh "helm delete ${helmChart} --purge"
+                            } else {
+                                println "${helmChart} is newer than ${days} days"
+                            }
                         }
+                    } catch (e) {
+                        echo "No helm deployments found in ${namespace}"
                     }
                 }
             }

@@ -28,6 +28,7 @@ def call(Map args) {
                             resourceRequestCpu: "${opts.jnlpReqCpu}", resourceLimitCpu: "${opts.jnlpResCpu}",
                             resourceRequestMemory: "${opts.jnlpReqMem}", resourceLimitMemory: "${opts.jnlpResMem}"),
         containerTemplate(name: 'helm', image: "${opts.helmImage}:${opts.helmVersion}", command: 'cat', ttyEnabled: true),
+        containerTemplate(name: 'kube', image: "${opts.kubeImage}:${opts.kubeVersion}", command: 'cat', ttyEnabled: true),
     ]) {
         node ('jenkins-slave-helm') {
             stage('Checkout') {
@@ -122,6 +123,9 @@ Map _deployOpts(Map args) {
         helmRelease: helmRelease,
         helmValues: helmValues,
         helmVersion: args.helmVersion ?: opts.helmVersion,
+
+        kubeImage: args.kubeImage ?: opts.kubeImage,
+        kubeVersion: args.kubeVersion ?: opts.kubeVersion,
 
         jnlpImage: args.jnlpImage ?: opts.jnlpImage,
         jnlpReqCpu: args.jnlpReqCpu ?: opts.jnlpReqCpu,

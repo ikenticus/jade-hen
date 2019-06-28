@@ -1,0 +1,66 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H 5 * * *')]),
+    parameters([
+        string(description: 'Region', name: 'region', defaultValue: 'us-east-4'),
+    ])
+])
+
+podTemplate(label: 'jenkins-slave', containers: [
+    containerTemplate(name: 'jnlp', image: 'jenkins/jnlp-slave:latest-jdk11',
+                        args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
+                        resourceRequestCpu: '200m', resourceLimitCpu: '300m',
+                        resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi'),
+    containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
+]) {
+    ansiColor('xterm') {
+        timeout(time: 10, unit: 'MINUTES') {
+            node ('jenkins-slave') {
+                stage('Cleanup') {
+                    container('awscli') {
+                        def repoList = sh(returnStdout: true,
+                                script: "aws ecr describe-repositories --region ${region} --query repositories[].repositoryName"
+                            ).trim()
+                        try {
+                            def repoJson = new JsonSlurperClassic().parseText(repoList)
+                            for (repo in repoJson) {
+                                try {
+                                    def imageList = sh(returnStdout: true,
+                                                    script: """
+                                                        aws ecr list-images --repository-name ${repo} --region ${region} \
+                                                        --filter tagStatus=UNTAGGED --query imageIds[].imageDigest
+                                                    """).trim()
+                                    try {
+                                        def imageJson = new JsonSlurperClassic().parseText(imageList)
+                                        if (imageJson.isEmpty()) {
+                                            println "No untagged images found in repository ${repo}"
+                                        } else {
+                                            def imageBatch = imageJson.join(' imageDigest=')
+                                            sh """
+                                                aws ecr batch-delete-image --repository-name ${repo} \
+                                                --region ${region} --image-ids imageDigest=${imageBatch}
+                                            """
+                                        }
+                                    } catch (e) {
+                                        println "Error batch deleting untagged images from repository ${repo}"
+                                        println(e)
+                                    }
+                                } catch (e) {
+                                    println "Error listing images from repository ${repo}"
+                                    println(e)
+                                }
+                            }
+                        } catch (e) {
+                            println "Error describing repositories from ${region}"
+                            println(e)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

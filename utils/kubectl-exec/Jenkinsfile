@@ -18,25 +18,30 @@ properties([
 ])
 
 podTemplate(label: 'jenkins-slave', containers: [
-containerTemplate(name: 'jnlp', image: 'jorgeacetozi/jenkins-slave-kubectl:latest',
+containerTemplate(name: 'jnlp', image: 'jenkins/jnlp-slave:latest-jdk11',
                     args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
                     resourceRequestCpu: '200m', resourceLimitCpu: '300m',
-                    resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi')
+                    resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi'),
+containerTemplate(name: 'kube', image: 'ikenticus/kubectl:1.15.0', command: 'cat', ttyEnabled: true)
 ]) {
     node ('jenkins-slave') {
         stage('List All Pods') {
-            sh "kubectl get pods -n ${params.namespace}"
+            container('kube') {
+                sh "kubectl get pods -n ${params.namespace}"
+            }
         }
 
         stage('Run Command') {
-            def releases = sh (
-                returnStdout: true,
-                script: "kubectl get pods -n ${params.namespace} --selector=app.kubernetes.io/instance=${params.release} -o name"
-            ).trim()
-            def pods = releases.split('\n')
-            for (i = 0; i < pods.size(); i++) {
-                def pod = pods[i].split('/')[-1]
-                sh "kubectl exec -it ${pod} -n ${params.namespace} -- ${params.command}"
+            container('kube') {
+                def releases = sh (
+                    returnStdout: true,
+                    script: "kubectl get pods -n ${params.namespace} --selector=app.kubernetes.io/instance=${params.release} -o name"
+                ).trim()
+                def pods = releases.split('\n')
+                for (i = 0; i < pods.size(); i++) {
+                    def pod = pods[i].split('/')[-1]
+                    sh "kubectl exec -it ${pod} -n ${params.namespace} -- ${params.command}"
+                }
             }
         }
     }

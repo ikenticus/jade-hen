@@ -5,7 +5,7 @@ properties([
     pipelineTriggers([cron('H 5 * * *')]),
 ])
 
-podTemplate(label: 'jenkins-slave-docker', containers: [
+podTemplate(label: 'jenkins-slave', containers: [
     containerTemplate(name: 'jnlp', image: 'jenkins/jnlp-slave:latest-jdk11',
                         args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
                         resourceRequestCpu: '200m', resourceLimitCpu: '300m',
@@ -16,12 +16,14 @@ volumes:[
     hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
 ]) {
     ansiColor('xterm') {
-        node ('jenkins-slave-docker') {
-            stage('Cleaning') {
-                container('docker') {
-                    sh "docker images"
-                    sh "docker system prune -af"
-                    sh "docker images"
+        timeout(time: 10, unit: 'MINUTES') {
+            node ('jenkins-slave') {
+                stage('Cleaning') {
+                    container('docker') {
+                        sh "docker images"
+                        sh "docker system prune -af"
+                        sh "docker images"
+                    }
                 }
             }
         }
