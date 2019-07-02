@@ -7,6 +7,7 @@ properties([
     pipelineTriggers([cron('H 5 * * *')]),
     parameters([
         string(description: 'Region', name: 'region', defaultValue: 'us-east-4'),
+        string(description: 'Repositories', name: 'repos', defaultValue: '/s3fs,/test,/live'),
     ])
 ])
 
@@ -22,12 +23,25 @@ podTemplate(label: 'jenkins-slave', containers: [
             node ('jenkins-slave') {
                 stage('Cleanup') {
                     container('awscli') {
+                        def target = repos.split(',')
                         def repoList = sh(returnStdout: true,
                                 script: "aws ecr describe-repositories --region ${region} --query repositories[].repositoryName"
                             ).trim()
                         try {
                             def repoJson = new JsonSlurperClassic().parseText(repoList)
                             for (repo in repoJson) {
+                                def valid = false
+                                for (test in target) {
+                                    if (test.startsWith('/')) {
+                                        if (repo.endsWith(test)) {
+                                            valid = true
+                                        }
+                                    } else if (repo == test) {
+                                        valid = true
+                                    }
+                                }
+                                if (!valid) continue
+                                println "Searching for untagged images in ${repo}"
                                 try {
                                     def imageList = sh(returnStdout: true,
                                                     script: """

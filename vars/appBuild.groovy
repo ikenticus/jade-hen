@@ -52,6 +52,7 @@ def call(Map args) {
                 stage('Build') {
                     container('docker') {
                         docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flag}", "ecr:${opts.region}:jenkins-iam") {
+                            println 'Execute Unit Tests within Dockerfile since every coding language varies'
                             args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
 
                             def buildArgs = ''

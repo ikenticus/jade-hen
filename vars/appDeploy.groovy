@@ -108,8 +108,12 @@ Map _deployOpts(Map args) {
     ] << helmArgs
 
     def helmOverride = ''
-    if (args.namespace == 'production') {
-        helmOverride = "-f ci/helm/${args.appName}/overrides/production.yaml"
+    try {
+        if (args.namespace != 'test') {
+            helmOverride = "-f ci/helm/${args.appName}/overrides/${args.namespace}.yaml"
+        }
+    } catch (e) {
+        println "Error overriding helm chart with ${args.namespace}"
     }
 
     return [
@@ -139,9 +143,7 @@ Map _deployOpts(Map args) {
 
 def _helmSetValues(Map opts) {
     def helmValues = [
-        'image.flag': args.flag ?: flag,
-        'image.tag': args.version,
-        'ingress.hosts[0]': fqdn,
+        'dummy.example': 'test',
     ] << opts.helmValues
     opts.helmValues = helmValues
 }
@@ -150,4 +152,5 @@ def _postDeploy(Map opts) {
     println 'Use Closures to handle Post Deploy Tasks'
     println 'i.e. Front End may need to handle Cache Bust/Seed'
     println 'i.e. Back End may need to handle Database updates'
+    println 'May want to run integration tests after deploy also'
 }

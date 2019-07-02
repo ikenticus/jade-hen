@@ -1,0 +1,16 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "rds",
+            "Effect": "Allow",
+            "Action": [
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBSnapshots"
+            ],
+            "Resource": [
+                "arn:aws:rds:*:*:*"
+            ]
+        }
+    ]
+}

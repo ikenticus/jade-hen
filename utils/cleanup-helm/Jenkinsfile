@@ -34,10 +34,10 @@ podTemplate(label: 'jenkins-slave-helm', containers: [
                             def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
 
                             if (helmDate < pastDate) {
-                                println "${helmChart} is OLDER than ${days} days"
+                                println "${helmChart} (${helmDate}) is OLDER than ${days} days"
                                 sh "helm delete ${helmChart} --purge"
                             } else {
-                                println "${helmChart} is newer than ${days} days"
+                                println "${helmChart} (${helmDate}) is newer than ${days} days"
                             }
                         }
                     } catch (e) {
