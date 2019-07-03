@@ -1,0 +1,148 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H 3 * * 0/2')]),
+    parameters([
+        string(description: 'AppName', name: 'appName', defaultValue: 'app-name'),
+        string(description: 'Domain', name: 'domain', defaultValue: 'db.domain.net'),
+        string(description: 'Region', name: 'region', defaultValue: 'us-east-5'),
+        string(description: 'Source', name: 'source', defaultValue: 'production'),
+        string(description: 'Target', name: 'target', defaultValue: 'test'),
+    ])
+])
+
+podTemplate(label: 'jenkins-slave', containers: [
+    containerTemplate(name: 'jnlp', image: 'jenkins/jnlp-slave:latest-jdk11',
+                        args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
+                        resourceRequestCpu: '200m', resourceLimitCpu: '300m',
+                        resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi'),
+    containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
+]) {
+    ansiColor('xterm') {
+        timeout(time: 20, unit: 'MINUTES') {
+            node ('jenkins-slave') {
+                container('awscli') {
+                    stage('Verify DNS') {
+                        def allZones = sh(returnStdout: true, script: "aws route53 list-hosted-zones").trim()
+                        def zones = new JsonSlurperClassic().parseText(allZones)['HostedZones']
+                        zoneID = ''
+                        zones.each {
+                            if ("${domain}.".endsWith(it.Name)) {
+                                zoneID = it.Id.replace('/hostedzone/', '')
+                            }
+                        }
+                        if (zoneID == '') {
+                            error("${domain} not in your list of hosted zones")
+                        }
+                        println "${domain} falls in zone ${zoneID}"
+                    }
+
+                    stage('Verify RDS') {
+                        def srcName = "${appName}-${source}.${region}.${domain}"
+                        dstName = "${appName}-${target}.${region}.${domain}"
+                        println "${srcName} => ${dstName}"
+
+                        srcDig = sh(returnStdout: true, script: "dig +short ${srcName}").trim()
+                        dstDig = sh(returnStdout: true, script: "dig +short ${dstName}").trim()
+
+                        //def newDate = Date.parse('yymmdd', new Date())
+                        //def newRDS = "${appName}-${target}-${newDate}"
+                        newRDS = "${appName}-${target}-${BUILD_NUMBER}"
+                    }
+
+                    stage('Obtain Source') {
+                        def srcRDS = srcDig.split('\n')[0].tokenize('.')[0]
+                        dstRDS = dstDig.split('\n')[0].tokenize('.')[0]
+                        println "${srcRDS} => ${newRDS} | replacing ${dstRDS}"
+
+                        def srcID = "--db-instance-identifier ${srcRDS} --region ${region}"
+                        def srcDBI = sh(returnStdout: true, script: "aws rds describe-db-instances ${srcID}").trim()
+                        def srcDBS = sh(returnStdout: true, script: "aws rds describe-db-snapshots ${srcID}").trim()
+
+                        vsgIDs = ''
+                        def srcVSG = new JsonSlurperClassic().parseText(srcDBI)['DBInstances'][-1]['VpcSecurityGroups']
+                        for (vsg in srcVSG) {
+                            if (vsg['Status'] == "active") {
+                                vsgIDs += " ${vsg['VpcSecurityGroupId']}"
+                            }
+                        }
+
+                        srcSID = new JsonSlurperClassic().parseText(srcDBS)['DBSnapshots'][-1]['DBSnapshotIdentifier']
+                        println "Latest snapshot: ${srcSID}, VPC security: ${vsgIDs}"
+                    }
+
+                    stage('Restore RDS') {
+                        sh """
+                            aws rds restore-db-instance-from-db-snapshot --vpc-security-group-ids ${vsgIDs} \
+                            --db-instance-identifier ${newRDS} --db-snapshot-identifier ${srcSID} --region ${region}
+                        """
+                    }
+
+                    stage('RDS Status') {
+                        def statusRDS = ""
+                        while (statusRDS != '"available"') {
+                            sleep(30)
+                            statusRDS = sh(returnStdout: true, script: """
+                                aws rds describe-db-instances --db-instance-identifier ${newRDS} \
+                                --query DBInstances[0].DBInstanceStatus --region ${region}
+                            """).trim()
+                            println "RDS ${newRDS} status is currently ${statusRDS}"
+                        }
+                    }
+
+                    stage('Update DNS') {
+                        def target = sh(returnStdout: true, script: """
+                            aws rds describe-db-instances --db-instance-identifier ${newRDS} \
+                            --query DBInstances[0].Endpoint.Address --region ${region}
+                        """).trim()
+                        writeFile(file: 'cname.json', text: """
+                            {
+                                "Comment": "Update CNAME Record for ${dstName}",
+                                "Changes": [
+                                    {
+                                        "Action": "UPSERT",
+                                        "ResourceRecordSet": {
+                                            "Name": "${dstName}",
+                                            "Type": "CNAME",
+                                            "TTL": 300,
+                                            "ResourceRecords": [
+                                                {
+                                                    "Value": ${target}
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        """)
+                        sh 'cat cname.json'
+                        change = sh(returnStdout: true, script: """
+                            aws route53 change-resource-record-sets --hosted-zone-id ${zoneID} --change-batch file://cname.json
+                        """).trim()
+                    }
+
+                    stage('DNS Status') {
+                        def changeID = new JsonSlurperClassic().parseText(change)['ChangeInfo']['Id']
+                        def statusDNS = ""
+                        while (statusDNS != "INSYNC") {
+                            sleep(10)
+                            change = sh(returnStdout: true, script: "aws route53 get-change --id ${changeID}").trim()
+                            statusDNS = new JsonSlurperClassic().parseText(change)['ChangeInfo']['Status']
+                            println "DNS ${changeID} status is currently ${statusDNS}"
+                        }
+                    }
+
+                    stage('Delete RDS') {
+                        sh """
+                            aws rds delete-db-instance --skip-final-snapshot \
+                            --db-instance-identifier ${dstRDS} --region ${region}
+                        """
+                    }
+                }
+            }
+        }
+    }
+}

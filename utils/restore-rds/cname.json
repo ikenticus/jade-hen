@@ -1,0 +1,18 @@
+{
+    "Comment": "Update CNAME Record for {SOURCE}",
+    "Changes": [
+        {
+            "Action": "UPDATE",
+            "ResourceRecordSet": {
+                "Name": "{SOURCE}",
+                "Type": "CNAME",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Value": {TARGET}
+                    }
+                ]
+            }
+        }
+    ]
+}
