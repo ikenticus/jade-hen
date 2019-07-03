@@ -5,8 +5,10 @@
             "Sid": "rds",
             "Effect": "Allow",
             "Action": [
+                "rds:DeleteDBInstance",
                 "rds:DescribeDBInstances",
-                "rds:DescribeDBSnapshots"
+                "rds:DescribeDBSnapshots",
+                "rds:RestoreDBInstanceFromDBSnapshot"
             ],
             "Resource": [
                 "arn:aws:rds:*:*:*"
