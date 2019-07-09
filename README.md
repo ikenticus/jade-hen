@@ -217,6 +217,15 @@ helm install stable/nginx-ingress --name nginx-ingress \
     --set controller.publishService.enabled=true
 ```
 
+If you want nginx-ingress to handle TLS using AWS Certificate Manager, obtain the certificate ARN:
+```
+aws acm list-certificates | jq -r '.CertificateSummaryList[] | select(.DomainName | endswith("domain.net")) | .CertificateArn'
+```
+update the `init/helm/nginx-values.yaml`, then install using helm chart values override:
+```
+helm install stable/nginx-ingress \
+    --values init/helm/nginx-values.yaml
+```
 
 ### <a id="extdns"></a> external-dns
 
