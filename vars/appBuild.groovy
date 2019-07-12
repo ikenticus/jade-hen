@@ -7,6 +7,7 @@ def call(Map args) {
 
     def opts = args.buildOpts ? args.buildOpts.call(args) : _buildOpts(args)
     currentBuild.description = "${opts.appName} ${opts.version}"
+    notifySlack('Initiating Build')
 
     podTemplate(label: 'jenkins-slave-docker', containers: [
         containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
@@ -24,68 +25,94 @@ def call(Map args) {
                 def dockerRepo = "https://${AWS_ID}.dkr.ecr.${opts.region}.amazonaws.com"
 
                 stage('Checkout') {
-                    deleteDir()
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: scm.branches,
-                        userRemoteConfigs: scm.userRemoteConfigs,
-                        extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
-                    ])
-                    opts.version = env.BRANCH_NAME.replace('_', '-').toLowerCase()
-                    currentBuild.description = "${opts.appName} ${opts.version}"
+                    try {
+                        deleteDir()
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: scm.branches,
+                            userRemoteConfigs: scm.userRemoteConfigs,
+                            extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
+                        ])
+                        opts.version = env.BRANCH_NAME.replace('_', '-').toLowerCase()
+                        currentBuild.description = "${opts.appName} ${opts.version}"
+                    } catch (e) {
+                        notifySlack("ERROR git checkout: ${e}")
+                        throw e
+                    }
                 }
 
                 stage('Tagging') {
-                    def topTag = sh (script: 'git describe --abbrev=0 --tags', returnStdout: true).trim()
-                    def topText = sh (script: 'git show --name-status', returnStdout: true).trim()
-                    def oldVersion = new SemVer(topTag)
-                    opts.nextVersion = oldVersion.bump(topText).toString()
+                    try {
+                        def topTag = sh (script: 'git describe --abbrev=0 --tags', returnStdout: true).trim()
+                        def topText = sh (script: 'git show --name-status', returnStdout: true).trim()
+                        def oldVersion = new SemVer(topTag)
+                        opts.nextVersion = oldVersion.bump(topText).toString()
 
-                    if (env.BRANCH_NAME == opts.master) {
-                        opts.flag = 'live'
-                        opts.namespace = 'staging'
-                        opts.version = opts.nextVersion
+                        if (env.BRANCH_NAME == opts.master) {
+                            opts.flag = 'live'
+                            opts.namespace = 'staging'
+                            opts.version = opts.nextVersion
+                        }
+                        currentBuild.description = "${opts.appName} ${opts.version}"
+                    } catch (e) {
+                        notifySlack("ERROR tagging app: ${e}")
+                        throw e
                     }
-                    currentBuild.description = "${opts.appName} ${opts.version}"
                 }
 
                 stage('Build') {
                     container('docker') {
-                        docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flag}", "ecr:${opts.region}:jenkins-iam") {
-                            println 'Execute Unit Tests within Dockerfile since every coding language varies'
-                            args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
+                        try {
+                            docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flag}", "ecr:${opts.region}:jenkins-iam") {
+                                println 'Execute Unit Tests within Dockerfile since every coding language varies'
+                                args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
 
-                            def buildArgs = ''
-                            if (opts.buildArgs.size() > 0) {
-                                buildArgs = '--build-arg ' + opts.buildArgs.collect { key, value -> "${key}=${value}" }.join(' --build-arg ')
+                                def buildArgs = ''
+                                if (opts.buildArgs.size() > 0) {
+                                    buildArgs = '--build-arg ' + opts.buildArgs.collect { key, value -> "${key}=${value}" }.join(' --build-arg ')
+                                }
+                                docker.build("${opts.appName}/${opts.flag}:${opts.version}", "${buildArgs} -f ci/Dockerfile .").push()
                             }
-                            docker.build("${opts.appName}/${opts.flag}:${opts.version}", "${buildArgs} -f ci/Dockerfile .").push()
+                            sh "docker images"
+                            //sh "docker rmi ${opts.appName}/${opts.flag}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flag}:${opts.version}"
+                            //sh "docker images"
+                        } catch (e) {
+                            notifySlack("ERROR with docker: ${e}")
+                            throw e
                         }
-                        sh "docker images"
-                        //sh "docker rmi ${opts.appName}/${opts.flag}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flag}:${opts.version}"
-                        //sh "docker images"
                     }
 
                     if (opts.pushGitTags && env.BRANCH_NAME == opts.master) {
-                        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-https',
-                            usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD']]
-                        ) {
-                            sh "git config user.email jenkins@${opts.domain}"
-                            sh 'git config user.name jenkins'
-                            sh "git config credential.username ${env.GIT_USERNAME}"
-                            sh "git config credential.helper '!f() { echo password=\$GIT_PASSWORD; }; f'"
-                            sh "git tag -a ${opts.version} -m ${opts.version}"
-                            sh "GIT_ASKPASS=true git push origin --tags"
+                        try {
+                            withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-https',
+                                usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD']]
+                            ) {
+                                sh "git config user.email jenkins@${opts.domain}"
+                                sh 'git config user.name jenkins'
+                                sh "git config credential.username ${env.GIT_USERNAME}"
+                                sh "git config credential.helper '!f() { echo password=\$GIT_PASSWORD; }; f'"
+                                sh "git tag -a ${opts.version} -m ${opts.version}"
+                                sh "GIT_ASKPASS=true git push origin --tags"
+                            }
+                        } catch (e) {
+                            notifySlack("ERROR git tag: ${e}")
+                            throw e
                         }
                     }
                 }
 
                 stage('Deploy') {
-                    println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
-                    build job: "deploy-${opts.appName}", wait: false, parameters: [
-                        string(name: 'namespace', value: opts.namespace),
-                        string(name: 'version', value: opts.version)
-                    ]
+                    try {
+                        println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
+                        build job: "deploy-${opts.appName}", wait: false, parameters: [
+                            string(name: 'namespace', value: opts.namespace),
+                            string(name: 'version', value: opts.version)
+                        ]
+                        notifySlack('SUCCESS building app')
+                    } catch (e) {
+                        notifySlack("ERROR building app: ${e}")
+                        throw e
+                    }
                 }
             }
         }

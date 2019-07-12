@@ -281,10 +281,12 @@ Then, you can add alternate login methods like Google OAuth. `Manage Jenkins` > 
 
  From the CodeCommit `jenkins` user account, the following credentials will need to be created from `Credentials` > `Jenkins` > `Global credentials` > `Add Credentials`:
  * `Secret text` storing the AWS_ID account number as the secret with the ID `aws-id` for the sample `Jenkinsfile` below.
+ * `Secret text` storing the Slack token as the secret with the ID `slack-token` for slack notifications
  * `Username with password` using HTTPS user/pass pair with ID `jenkins-https` and Description `Jenkins user/pass for SCM`.
  * `AWS Credentials` using the IAM access/secret with ID `jenkins-iam` and Description `Jenkins access/secret for ECR`.
  * `SSH Username with private key` if you generated an SSH key earlier, using ID `jenkins-ssh` and username `jenkins` and pasting the Private Key and Passphrase utilized during the [IAM](#iam) process.
 
+If you plan on using the slack notification plugin: `Manage Jenkins` > `Configure System` > `Global Slack Notifier Settings` and supply the `Team Subdomain`, `Integration Token Credential ID`, and `Channel or Slack ID`
 
 Finally, add the newly created `jade-hen` pipeline above as a Global Pipeline Library: `Manage Jenkins` > `Configure System` > `Global Pipeline Libraries`, name it something like `shared-pipeline` and set up the SCM using the `jenkins-https` credentials.
 

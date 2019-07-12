@@ -4,6 +4,7 @@ def podOpts() {
     return [
         domain: 'test.domain.net',
         region: 'us-east-4',
+        master: 'master',
 
         dockerImage: 'docker',
         dockerVersion: 'latest',

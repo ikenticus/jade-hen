@@ -10,16 +10,17 @@ master:
     - amazon-ecr:1.6
     - ansicolor:0.6.2
     - aws-credentials:1.27
-    - blueocean:1.16.0
+    - blueocean:1.17.0
     - credentials-binding:1.19
-    - git:3.10.0
+    - git:3.10.1
     - google-login:1.4
-    - kubernetes:1.15.5
+    - kubernetes:1.17.1
     - pipeline-graph-analysis:1.10
     - pipeline-stage-view:2.11
+    - slack:2.27
     - ssh-agent:1.17
     - thinBackup:1.9
-    - workflow-job:2.32
+    - workflow-job:2.33
 
   ingress:
     enabled: true

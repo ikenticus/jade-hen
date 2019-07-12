@@ -32,17 +32,23 @@ def call(Map args) {
     ]) {
         node ('jenkins-slave-helm') {
             stage('Checkout') {
-                deleteDir()
-                def branch = opts.master
-                if (opts.namespace == 'test') {
-                    branch = opts.version
+                try {
+                    deleteDir()
+                    def branch = opts.master
+                    if (opts.namespace == 'test') {
+                        branch = opts.version
+                    }
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "${branch}"]],
+                        userRemoteConfigs: scm.userRemoteConfigs,
+                        extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
+                    ])
+                    sh 'cat ci/Jenkinsfile.deploy'
+                } catch (e) {
+                    notifySlack("ERROR git checkout: ${e}")
+                    throw e
                 }
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "${branch}"]],
-                    userRemoteConfigs: scm.userRemoteConfigs,
-                    extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
-                ])
             }
 
             stage('Deploy') {
@@ -58,7 +64,9 @@ def call(Map args) {
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
                             --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
+                        notifySlack('SUCCESS deploying app')
                     } catch (e) {
+                        notifySlack("ERROR deploying app: ${e}")
                         println "Failed to install/upgrade helm chart: ${e.message}"
                         sh "helm status ${opts.helmRelease}"
                         sh "helm rollback ${opts.helmRelease} 0"
@@ -128,12 +136,12 @@ Map _deployOpts(Map args) {
         helmValues: helmValues,
         helmVersion: args.helmVersion ?: opts.helmVersion,
 
-        kubeImage: args.kubeImage ?: opts.kubeImage,
-        kubeVersion: args.kubeVersion ?: opts.kubeVersion,
-
         jnlpImage: args.jnlpImage ?: opts.jnlpImage,
         jnlpVersion: args.jnlpVersion ?: opts.jnlpVersion,
         jnlpWorkDir: args.jnlpWorkDir ?: opts.jnlpWorkDir,
+
+        kubeImage: args.kubeImage ?: opts.kubeImage,
+        kubeVersion: args.kubeVersion ?: opts.kubeVersion,
 
         podReqCpu: args.podReqCpu ?: opts.podReqCpu,
         podReqMem: args.podReqMem ?: opts.podReqMem,
