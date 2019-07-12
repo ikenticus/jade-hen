@@ -15,7 +15,7 @@ ansiColor('xterm') {
     }
 
     appDeploy appName: 'app-sample',
-        jnlpResCpu: '500m', jnlpResMem: '1Gi',
+        podResCpu: '500m', podResMem: '1Gi',
         namespace: params.namespace,
         version: params.version,
         helmArgs: [

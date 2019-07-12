@@ -2,6 +2,7 @@
 
 REGION := us-east-5
 AWS_ID := 123456789098
+VPC_ID := vpc-1a2b3c
 
 EKS := test
 NODETYPE := m5.large
@@ -40,12 +41,46 @@ trigger:
 	        events=all,destinationArn=arn:aws:sns:${REGION}:${AWS_ID}:trigger-jenkins,branches=[],name="Deploy ${REPO}"; \
 	fi
 
-eks-init:
+eks-keypair:
 	aws ec2 create-key-pair --key-name eks-worker-keypair --region ${REGION}
-	eksctl create cluster --name=${EKS} --region ${REGION} \
-	    --asg-access --nodes=3 --node-type=${NODETYPE} \
-	    --zones=${REGION}a,${REGION}b,${REGION}c \
-	    --external-dns-access \
+
+eks-init-abc-az:
+	eksctl create cluster --name=test --region ${REGION} \
+	    --asg-access --external-dns-access --full-ecr-access \
+	    --node-type=${NODETYPE} --nodes=3 \
+	    --nodes-min=3 --nodes-max=10 --zones=${AZ} \
+	    --ssh-access --ssh-public-key=eks-worker-keypair
+
+eks-init-all-azs:
+	AZ=$(aws ec2 describe-availability-zones --region ${REGION} \
+	    --query AvailabilityZones[].ZoneName | jq -r 'join(",")')
+	eksctl create cluster --name=test --region ${REGION} \
+	    --asg-access --external-dns-access --full-ecr-access \
+	    --node-type=${NODETYPE} --nodes=3 \
+	    --nodes-min=3 --nodes-max=10 \
+		--zones=${REGION}a,${REGION}b,${REGION}c \
+	    --ssh-access --ssh-public-key=eks-worker-keypair
+
+eks-init-all-priv:
+	PRIV=$(aws ec2 describe-subnets \
+		--filter Name=vpc-id,Values=${VPC_ID} | \
+		jq -r '.Subnets | map(select(.Tags[0].Value | startswith("private")) | .SubnetId) | join(",")')
+	eksctl create cluster --name=test --region ${REGION} \
+	    --asg-access --external-dns-access --full-ecr-access \
+	    --node-type=${NODETYPE} --nodes=3 \
+	    --nodes-min=3 --nodes-max=10 \
+		--vpc-private-subnets ${PRIV} \
+	    --ssh-access --ssh-public-key=eks-worker-keypair
+
+eks-init-all-pub:
+	PUB=$(aws ec2 describe-subnets \
+		--filter Name=vpc-id,Values=${VPC_ID} | \
+		jq -r '.Subnets | map(select(.Tags[0].Value | contains("public")) | .SubnetId) | join(",")')
+	eksctl create cluster --name=test --region ${REGION} \
+	    --asg-access --external-dns-access --full-ecr-access \
+	    --node-type=${NODETYPE} --nodes=3 \
+	    --nodes-min=3 --nodes-max=10 \
+		--vpc-public-subnets ${PUB} \
 	    --ssh-access --ssh-public-key=eks-worker-keypair
 
 eks-kube:

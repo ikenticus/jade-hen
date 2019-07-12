@@ -116,18 +116,40 @@ Before creating a Kubernetes Cluster, it would be best to create a keypair for t
 aws ec2 create-key-pair --key-name eks-worker-keypair --region $REGION
 ```
 
-After creating the keypair, it is fairly easy to spin up a cluster with `eksctl`:
+After creating the keypair, it is fairly easy to spin up a cluster with `eksctl` across all availability zones:
 ```
+AZ=$(aws ec2 describe-availability-zones --region $REGION \
+    --query AvailabilityZones[].ZoneName | jq -r 'join(",")')
+
 eksctl create cluster --name=test --region $REGION \
-    --asg-access --nodes=3 --node-type=$NODETYPE \
-    --zones=${REGION}a,${REGION}b,${REGION}c \
-    --external-dns-access \
+    --asg-access --external-dns-access --full-ecr-access \
+    --node-type=$NODETYPE --nodes=3 \
+    --nodes-min=3 --nodes-max=10 --zones=$AZ \
     --ssh-access --ssh-public-key=eks-worker-keypair
 ```
-If you  need larger node-types or you want to replace the AMI for the nodegroup, you need to create a new one.
+Alternatively, you can specify specific AZs instead of applying them all:
+```
+    --zones=${REGION}a,${REGION}b,${REGION}c
+```
+Or even replace `--zones` with either private or public subnets (or both)
+```
+PRIV=$(aws ec2 describe-subnets \
+    --filter Name=vpc-id,Values=$VPCID | \
+    jq -r '.Subnets | map(select(.Tags[0].Value | startswith("private")) | .SubnetId) | join(",")')
+```
+```
+PUB=$(aws ec2 describe-subnets \
+    --filter Name=vpc-id,Values=$VPCID | \
+    jq -r '.Subnets | map(select(.Tags[0].Value | contains("public")) | .SubnetId) | join(",")')
+```
+```
+    --vpc-private-subnets $PRIV --vpc-public-subnets $PUB
+```
+
+If you  need larger node-types or you want to replace the AMI for the nodegroup, you need to first create a new one.
 ```
 eksctl create nodegroup --cluster test --region $REGION \
-    --asg-access --node-ami=auto --nodes=3 --nodes-min=3 --nodes-max=10 \
+    --node-ami=auto --nodes=3 --node-type=$NODETYPE \
     --ssh-access --ssh-public-key=eks-worker-keypair
 ```
 Then display all your nodegroups to pinpoint the names of the nodegroups that you are keeping versus the ones you are discarding.
@@ -198,6 +220,7 @@ eksctl utils write-kubeconfig --name test --region $REGION
 Finally, in order to deploy the rest of the systems via `helm` we need to install `tiller` (which we will migrate away from in helm3):
 ```
 kubectl apply -f init/kube/tiller.yaml
+helm init --service-account tiller --upgrade
 ```
 
 You might also take this opportunity to add any kubernetes secrets you might need for helm deployment:
@@ -223,7 +246,7 @@ aws acm list-certificates | jq -r '.CertificateSummaryList[] | select(.DomainNam
 ```
 update the `init/helm/nginx-values.yaml`, then install using helm chart values override:
 ```
-helm install stable/nginx-ingress \
+helm install stable/nginx-ingress --name nginx-ingress \
     --values init/helm/nginx-values.yaml
 ```
 

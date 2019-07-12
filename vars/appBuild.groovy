@@ -11,8 +11,8 @@ def call(Map args) {
     podTemplate(label: 'jenkins-slave-docker', containers: [
         containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
                             args: '${computer.jnlpmac} ${computer.name}', workingDir: "${opts.jnlpWorkDir}",
-                            resourceRequestCpu: "${opts.jnlpReqCpu}", resourceLimitCpu: "${opts.jnlpResCpu}",
-                            resourceRequestMemory: "${opts.jnlpReqMem}", resourceLimitMemory: "${opts.jnlpResMem}"),
+                            resourceRequestCpu: "${opts.podReqCpu}", resourceLimitCpu: "${opts.podResCpu}",
+                            resourceRequestMemory: "${opts.podReqMem}", resourceLimitMemory: "${opts.podResMem}"),
         containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true)
     ],
     volumes:[
@@ -109,12 +109,13 @@ Map _buildOpts(Map args) {
         dockerVersion: args.dockerVersion ?: opts.dockerVersion,
 
         jnlpImage: args.jnlpImage ?: opts.jnlpImage,
-        jnlpReqCpu: args.jnlpReqCpu ?: opts.jnlpReqCpu,
-        jnlpReqMem: args.jnlpReqMem ?: opts.jnlpReqMem,
-        jnlpResCpu: args.jnlpResCpu ?: opts.jnlpResCpu,
-        jnlpResMem: args.jnlpResMem ?: opts.jnlpResMem,
         jnlpVersion: args.jnlpVersion ?: opts.jnlpVersion,
         jnlpWorkDir: args.jnlpWorkDir ?: opts.jnlpWorkDir,
+
+        podReqCpu: args.podReqCpu ?: opts.podReqCpu,
+        podReqMem: args.podReqMem ?: opts.podReqMem,
+        podResCpu: args.podResCpu ?: opts.podResCpu,
+        podResMem: args.podResMem ?: opts.podResMem,
 
         pushGitTags: args.pushGitTags ?: opts.pushGitTags,
     ]
