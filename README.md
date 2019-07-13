@@ -180,9 +180,10 @@ aws iam attach-role-policy --role-name eksctl-test-nodegroup-node36-NodeInstance
 
 ### <a id="kubectl"></a> kubectl
 
-Using `kubectl` you can install the various useful Kubernetes tools, like the dashboard:
+Using `kubectl` you can install the various useful Kubernetes tools, like the dashboard (update ingress `domain.net` before running):
 ```
-kubectl create -f https://raw.githubusercontent.com/kubernetes/dashboard/master/aio/deploy/recommended/kubernetes-dashboard.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml
+kubectl create -f init/kube/dashboard-ingress.yaml
 ```
 
 Now that heapster was deprecated as of 1.13, install metrics-server:
