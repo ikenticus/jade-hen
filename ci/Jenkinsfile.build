@@ -16,5 +16,6 @@ ansiColor('xterm') {
         buildArgs: [
             MYSQL_PORT: '3306'
         ],
-        pushGitTags: true
+        pushGitTags: true,
+        continuous: 'delivery'
 }

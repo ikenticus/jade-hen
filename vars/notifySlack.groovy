@@ -9,6 +9,7 @@ def call (String msg) {
     } else {
         color = 'warning'
     }
-    def message = "[${env.BUILD_URL}] - ${msg}"
+    //def message = "[${env.BUILD_URL}] - ${msg}"
+    def message = "[${env.JOB_NAME} #${env.BUILD_NUMBER}] - ${msg}"
     slackSend color: color, message: message
 }

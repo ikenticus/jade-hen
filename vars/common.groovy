@@ -2,6 +2,7 @@
 
 def podOpts() {
     return [
+        continuous: 'delivery', // vs deployment
         domain: 'test.domain.net',
         region: 'us-east-4',
         master: 'master',
@@ -10,6 +11,7 @@ def podOpts() {
         dockerVersion: 'latest',
 
         helmImage: 'alpine/helm',
+        helmOverride: '',
         helmVersion: '2.12.3',
 
         kubeImage: 'ikenticus/kubectl',

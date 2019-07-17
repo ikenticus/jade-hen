@@ -7,7 +7,7 @@ def call(Map args) {
 
     def opts = args.buildOpts ? args.buildOpts.call(args) : _buildOpts(args)
     currentBuild.description = "${opts.appName} ${opts.version}"
-    notifySlack('Initiating Build')
+    notifySlack("Initiating Build: ${BUILD_URL}")
 
     podTemplate(label: 'jenkins-slave-docker', containers: [
         containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
@@ -36,7 +36,7 @@ def call(Map args) {
                         opts.version = env.BRANCH_NAME.replace('_', '-').toLowerCase()
                         currentBuild.description = "${opts.appName} ${opts.version}"
                     } catch (e) {
-                        notifySlack("ERROR git checkout: ${e}")
+                        notifySlack("ERROR git Checkout ${opts.version}: ${e}")
                         throw e
                     }
                 }
@@ -46,16 +46,22 @@ def call(Map args) {
                         def topTag = sh (script: 'git describe --abbrev=0 --tags', returnStdout: true).trim()
                         def topText = sh (script: 'git show --name-status', returnStdout: true).trim()
                         def oldVersion = new SemVer(topTag)
-                        opts.nextVersion = oldVersion.bump(topText).toString()
+
+                        // pushGitTags assumes automatic version bump, else leave as-is
+                        if (opts.pushGitTags) {
+                            opts.nextVersion = oldVersion.bump(topText).toString()
+                        } else {
+                            opts.nextVersion = oldVersion.toString()
+                        }
 
                         if (env.BRANCH_NAME == opts.master) {
-                            opts.flag = 'live'
-                            opts.namespace = 'staging'
+                            opts.flagRepo = 'live'
                             opts.version = opts.nextVersion
+                            opts.namespace = 'staging'
                         }
                         currentBuild.description = "${opts.appName} ${opts.version}"
                     } catch (e) {
-                        notifySlack("ERROR tagging app: ${e}")
+                        notifySlack("ERROR Tagging ${opts.version}: ${e}")
                         throw e
                     }
                 }
@@ -63,7 +69,7 @@ def call(Map args) {
                 stage('Build') {
                     container('docker') {
                         try {
-                            docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flag}", "ecr:${opts.region}:jenkins-iam") {
+                            docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flagRepo}", "ecr:${opts.region}:jenkins-iam") {
                                 println 'Execute Unit Tests within Dockerfile since every coding language varies'
                                 args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
 
@@ -71,13 +77,14 @@ def call(Map args) {
                                 if (opts.buildArgs.size() > 0) {
                                     buildArgs = '--build-arg ' + opts.buildArgs.collect { key, value -> "${key}=${value}" }.join(' --build-arg ')
                                 }
-                                docker.build("${opts.appName}/${opts.flag}:${opts.version}", "${buildArgs} -f ci/Dockerfile .").push()
+                                docker.build("${opts.appName}/${opts.flagRepo}:${opts.version}",
+                                    "--network host ${buildArgs} -f ci/Dockerfile .").push()
                             }
                             sh "docker images"
-                            //sh "docker rmi ${opts.appName}/${opts.flag}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flag}:${opts.version}"
+                            //sh "docker rmi ${opts.appName}/${opts.flagRepo}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flagRepo}:${opts.version}"
                             //sh "docker images"
                         } catch (e) {
-                            notifySlack("ERROR with docker: ${e}")
+                            notifySlack("ERROR with Docker: ${e}")
                             throw e
                         }
                     }
@@ -95,7 +102,7 @@ def call(Map args) {
                                 sh "GIT_ASKPASS=true git push origin --tags"
                             }
                         } catch (e) {
-                            notifySlack("ERROR git tag: ${e}")
+                            notifySlack("ERROR Pushing git tag: ${e}")
                             throw e
                         }
                     }
@@ -105,12 +112,14 @@ def call(Map args) {
                     try {
                         println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
                         build job: "deploy-${opts.appName}", wait: false, parameters: [
+                            string(name: 'master', value: opts.master),
+                            string(name: 'version', value: opts.version),
                             string(name: 'namespace', value: opts.namespace),
-                            string(name: 'version', value: opts.version)
+                            string(name: 'continuous', value: opts.continuous)
                         ]
-                        notifySlack('SUCCESS building app')
+                        notifySlack("SUCCESS Building ${opts.version}: ${BUILD_URL}console")
                     } catch (e) {
-                        notifySlack("ERROR building app: ${e}")
+                        notifySlack("ERROR Building ${opts.version}: ${e} (${BUILD_URL}console)")
                         throw e
                     }
                 }
@@ -125,8 +134,9 @@ Map _buildOpts(Map args) {
     return [
         appName: args.appName ?: 'unnamed',
         buildArgs: args.buildArgs ?: [:],
+        continuous: args.continuous ?: opts.continuous,
         domain: args.domain ?: opts.domain,
-        flag: args.flag ?: 'test',
+        flagRepo: args.flagRepo ?: 'test',
         master: args.master ?: opts.master,
         namespace: args.namespace ?: 'test',
         region: args.region ?: opts.region,
@@ -157,8 +167,7 @@ class SemVer implements Serializable {
     private int major, minor, patch
 
     SemVer(String version) {
-        def versionParts = version.tokenize('.')
-        println versionParts
+        def versionParts = version.tokenize('-')[0].tokenize('.')
         if (versionParts.size() != 3) {
             throw new IllegalArgumentException("Wrong version format - expected MAJOR.MINOR.PATCH - got ${version}")
         }

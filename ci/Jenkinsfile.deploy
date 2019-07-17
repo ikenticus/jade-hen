@@ -16,8 +16,10 @@ ansiColor('xterm') {
 
     appDeploy appName: 'app-sample',
         podResCpu: '500m', podResMem: '1Gi',
+        continuous: params.continuous,
         namespace: params.namespace,
         version: params.version,
+        master: params.master,
         helmArgs: [
             'image.tag': 'v9.0.0'
         ],

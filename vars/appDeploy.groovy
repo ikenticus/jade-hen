@@ -4,6 +4,10 @@ def call(Map args) {
     properties([
         disableConcurrentBuilds(),
         parameters([
+            string(description: 'Version should match git tag as well as image tag, for example: v1.2.3\nfor test use branch slug',
+                   name: 'version',
+                   defaultValue: ''
+            ),
             choice(description: 'Namespace',
                    name: 'namespace',
                    choices: [
@@ -12,9 +16,16 @@ def call(Map args) {
                         'production',
                     ]
             ),
-            string(description: 'Version should match git tag as well as image tag, for example: v1.2.3\nfor test use branch slug',
-                   name: 'version',
-                   defaultValue: ''
+            choice(description: 'Continuous D ?',
+                   name: 'continuous',
+                   choices: [
+                        'delivery',
+                        'deployment',
+                    ]
+            ),
+            string(description: 'Name of the master branch for staging/production',
+                   name: 'master',
+                   defaultValue: 'master'
             ),
         ])
     ])
@@ -46,7 +57,7 @@ def call(Map args) {
                     ])
                     sh 'cat ci/Jenkinsfile.deploy'
                 } catch (e) {
-                    notifySlack("ERROR git checkout: ${e}")
+                    notifySlack("ERROR git Checkout ${opts.version}: ${e}")
                     throw e
                 }
             }
@@ -54,19 +65,16 @@ def call(Map args) {
             stage('Deploy') {
                 container('helm') {
                     try {
-                        def override = "ci/helm/${opts.helmChart}/overrides/${opts.version}.yaml"
-                        if (fileExists(override)) {
-                            opts.helmOverride = "-f ${override}"
-                        }
+                        args.helmSetOverrides ? args.helmSetOverrides.call(opts) : _helmSetOverrides(opts)
                         args.helmSetValues ? args.helmSetValues.call(opts) : _helmSetValues(opts)
                         def values = opts.helmValues.collect { key, value -> "${key}=${value}" }.join(',')
                         sh """
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
                             --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
-                        notifySlack('SUCCESS deploying app')
+                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console")
                     } catch (e) {
-                        notifySlack("ERROR deploying app: ${e}")
+                        notifySlack("ERROR Deploying ${opts.version} to ${opts.namespace}: ${e} (${BUILD_URL}console)")
                         println "Failed to install/upgrade helm chart: ${e.message}"
                         sh "helm status ${opts.helmRelease}"
                         sh "helm rollback ${opts.helmRelease} 0"
@@ -80,10 +88,14 @@ def call(Map args) {
                 if (opts.namespace == 'staging') {
                     timeout(time: 20, unit: 'HOURS') {
                         try {
-                            input "Deploy ${opts.version} to Production?"
+                            if (opts.continuous == 'delivery') {
+                                input "Deploy ${opts.version} to Production?"
+                            }
                             build job: env.JOB_BASE_NAME, wait: false, parameters: [
+                                string(name: 'master', value: opts.master),
+                                string(name: 'version', value: opts.version),
                                 string(name: 'namespace', value: 'production'),
-                                string(name: 'version', value: opts.version)
+                                string(name: 'continuous', value: opts.continuous)
                             ]
                             println "Deployed ${opts.version} to Staging, approved for Production"
                         } catch (e) {
@@ -99,39 +111,35 @@ def call(Map args) {
 Map _deployOpts(Map args) {
     def opts = common.podOpts()
 
-    def flag = 'test'
+    def flagRepo = 'test'
     def helmRelease = "${args.appName}-${args.namespace}"
+    if (args.continuous == 'deployment') {
+        // append version to release to avoid deployment overwrite
+        helmRelease += "-${args.version}".replace('.', 'o')
+    }
     if (args.namespace == 'test') {
         helmRelease = "${args.appName}-${args.version}"
     } else {
-        flag = 'live'
+        flagRepo = 'live'
     }
     def fqdn = "${helmRelease}.${opts.region}.${opts.domain}"
 
     def helmArgs = args.helmValues ?: [:]
     def helmValues = [
-        'image.flag': args.flag ?: flag,
+        'image.flag': args.flagRepo ?: flagRepo,
         'image.tag': args.version,
         'ingress.hosts[0]': fqdn,
     ] << helmArgs
 
-    def helmOverride = ''
-    try {
-        if (args.namespace != 'test') {
-            helmOverride = "-f ci/helm/${args.appName}/overrides/${args.namespace}.yaml"
-        }
-    } catch (e) {
-        println "Error overriding helm chart with ${args.namespace}"
-    }
-
     return [
+        continuous: args.continuous ?: opts.continuous,
         master: args.master ?: opts.master,
         namespace: args.namespace ?: 'test',
         version: args.version,
 
         helmChart: args.appName,
         helmImage: args.helmImage ?: opts.helmImage,
-        helmOverride: args.helmOverride ?: helmOverride,
+        helmOverride: args.helmOverride ?: opts.helmOverride,
         helmRelease: helmRelease,
         helmValues: helmValues,
         helmVersion: args.helmVersion ?: opts.helmVersion,
@@ -148,6 +156,17 @@ Map _deployOpts(Map args) {
         podResCpu: args.podResCpu ?: opts.podResCpu,
         podResMem: args.podResMem ?: opts.podResMem,
     ]
+}
+
+def _helmSetOverrides(Map opts) {
+    def override = "ci/helm/${opts.helmChart}/overrides/"
+    if (fileExists(override + "${opts.namespace}.yaml")) {
+        opts.helmOverride = "-f ${override}${opts.namespace}.yaml"
+        println "Applying namespace override: ${opts.helmOverride}"
+    } else if (fileExists(override + "${opts.version}.yaml")) {
+        opts.helmOverride = "-f ${override}${opts.version}.yaml"
+        println "Applying version override: ${opts.helmOverride}"
+    }
 }
 
 def _helmSetValues(Map opts) {

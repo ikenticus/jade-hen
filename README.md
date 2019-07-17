@@ -8,6 +8,8 @@ EKS implies Kubernetes whereas AWS implies Route53 and CodeCommit (and not GitHu
 Jenkins CI replaces the CodePipeline and CodeBuild services but everything else taps into Amazon Web Services.
 Scattered across the internet were examples and tutorials utilizing certain aspects of `jade-hen` but after spending weeks trying to piece them altogether,
 it seemed prudent to create this repository in order to assemble all the disparate components in one place to help others save time.
+Originally, this project was designed for continuous delivery, prompting users to deploy to production after successfully deploying to staging.
+However, setting the `continuous` argument to `deployment` should skip the prompt and deploy production using a versioned helm chart.
 
 
 ## Ingredients
