@@ -21,7 +21,7 @@ but many of the ingredients may be reused in between the others:
 * [EKS](#eks) Kubernetes Cluster
 * [kubectl](#kubectl) (kubernetes control tool)
 * [nginx-ingress](#nginx) replacing Elastic Load Balancers
-* [external-dNS](#extdns) using Route53
+* [external-DNS](#extdns) using Route53
 * [Jenkins](#jenkins) CI with Pods
 * [Docker](#docker) Containers
 * [Helm](#helm) Charts
@@ -78,7 +78,7 @@ aws iam attach-group-policy --policy-arn arn:aws:iam::aws:policy/service-role/AW
 
 ### <a id="codecommit"></a> CodeCommit
 
-Since HTTPS Git credentials for AWS CodeCommit cannot be generate from command line, go to `https://console.aws.amazon.com/iam/home#/users/jenkins?section=security_credentials` and Generate a username/password pair.
+Since HTTPS Git credentials for AWS CodeCommit cannot be generated from command line, go to `https://console.aws.amazon.com/iam/home#/users/jenkins?section=security_credentials` to generate a username/password pair.
 
 Create a new pipeline repository in your AWS CodeCommit and copy/commit the `/vars` directory from `jade-hen` into this new pipeline repository. This will allow you to make any changes to `jade-hen` as necessary, such as modifying the `common.groovy` options.
 
@@ -273,7 +273,7 @@ kubectl create -f init/kube/jenkins-ingress.yaml
 
 ### <a id="jenkins"></a> Jenkins
 
-Now that external-dns and nginx-ingress are installed properly, the Jenkins CI can be simple installed using helm as well: `helm install stable/jenkins --name jenkins --values init/helm/jenkins-values.yaml`
+Now that external-dns and nginx-ingress are installed properly, the Jenkins CI can be simply installed using helm as well: `helm install stable/jenkins --name jenkins --values init/helm/jenkins-values.yaml`
 
 After the DNS kicks in, you can log into the Jenkins on your browser as admin using the auto-generated password: `kubectl get secret --namespace test jenkins -o jsonpath="{.data.jenkins-admin-password}" | base64 --decode | pbcopy`
 
@@ -315,7 +315,7 @@ kubectl cp $PODNAME:tmp/backup.tgz /tmp/
 
 ### <a id="docker"></a> Docker
 
-Each repository will have its own `ci/Dockerfile` to custom build its container for ECR. The sample `Dockerfile`.builds are meant as a guide for some code build variations and not a complete list of all available coding languages/frameworks in existence at the time of this writing. You will have to learn to write your own `Dockerfile` using these examples and whatever you can find but, from my experience, the only tips gathered thus far are:
+Each repository will have its own `ci/Dockerfile` to custom build its container for ECR. The sample `Dockerfile.<builds>` are meant as a guide for some code build variations and not a complete list of all available coding languages/frameworks in existence at the time of this writing. You will have to learn to write your own `Dockerfile` using these examples and whatever you can find but, from my experience, the only tips gathered thus far are:
 * Instead of logging to `/var/log/${APP}`, all logging should go to `/dev/stdout` so that `kubectl log ${POD}` will function correctly
 * For Golang, since it can compile binaries, you can start with whatever OS you like to debug, but eventually should evolve into a minimal base like `alpine` or as basic an OS as can be found or built
 * For `node.js`, while `pm2` was undoubtedly a great resource manager, it seems redundant to execute it within a kubernetes pod since the `deployment` and `replica set` handle that using customized resource limits, so better to just end the `Dockerfile` with `CMD ["node", "index.js"]`
@@ -324,7 +324,7 @@ Any docker `--build-arg` arguments can be passed to the `appBuild` as `buildArgs
 
 ### <a id="helm"></a> Helm
 
-Each repository will have its own `ci/helm` charts to deploy to test/live environments. Existing helm charts are used above to deploy standardized versions of many of the apps in this project, so either clone of the various examples above or create your own with `helm create`. Obviously, `deployment` and `replica set` are taken care of almost automatically. Add `service` only if you plan on utilizing you limited supply of Elastic IP or Elastic Load Balancing quota, but the point of this project is to utilize the `nginx-ingress` to avoid all of that and `external-dns` to automatically update `Route53` during deployment so do not forget to include the `ingress` component.
+Each repository will have its own `ci/helm` charts to deploy to test/live environments. Existing helm charts are used above to deploy standardized versions of many of the apps in this project, so either clone one of the various examples above or create your own with `helm create`. Obviously, `deployment` and `replica set` are taken care of almost automatically. Add `service` only if you plan on utilizing your limited supply of Elastic IP or Elastic Load Balancing quota, but the point of this project is to utilize the `nginx-ingress` to avoid all of that and `external-dns` to automatically update `Route53` during deployment so do not forget to include the `ingress` component.
 
 Like the docker `buildArgs` Map, overrides to helm can be passed to `appDeploy` via `helmArgs` or by creating a `ci/helm/example/overrides/branch-name.yaml` within the branch itself.
 

@@ -33,15 +33,16 @@ def call(Map args) {
     def opts = args.deployOpts ? args.deployOpts.call(args) : _deployOpts(args)
     currentBuild.description = "${opts.namespace}: ${opts.version}"
 
-    podTemplate(label: 'jenkins-slave-helm', containers: [
+    podTemplate(label: "jenkins-deploy-${opts.helmChart}", containers: [
         containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
                             args: '${computer.jnlpmac} ${computer.name}', workingDir: "${opts.jnlpWorkDir}",
                             resourceRequestCpu: "${opts.podReqCpu}", resourceLimitCpu: "${opts.podResCpu}",
                             resourceRequestMemory: "${opts.podReqMem}", resourceLimitMemory: "${opts.podResMem}"),
         containerTemplate(name: 'helm', image: "${opts.helmImage}:${opts.helmVersion}", command: 'cat', ttyEnabled: true),
         containerTemplate(name: 'kube', image: "${opts.kubeImage}:${opts.kubeVersion}", command: 'cat', ttyEnabled: true),
+        containerTemplate(name: 'test', image: "${opts.testImage}:${opts.testVersion}", command: 'cat', ttyEnabled: true),
     ]) {
-        node ('jenkins-slave-helm') {
+        node ("jenkins-deploy-${opts.helmChart}") {
             stage('Checkout') {
                 try {
                     deleteDir()
@@ -78,6 +79,18 @@ def call(Map args) {
                         println "Failed to install/upgrade helm chart: ${e.message}"
                         sh "helm status ${opts.helmRelease}"
                         sh "helm rollback ${opts.helmRelease} 0"
+                        throw e
+                    }
+                }
+            }
+
+            stage('Integration Tests') {
+                container('test') {
+                    try {
+                        // Execute Integration Tests within "test" container since every coding language varies
+                        args.testIntegration ? args.testIntegration.call(opts) : _testIntegration(opts)
+                    } catch (e) {
+                        notifySlack("ERROR Failed Integration Test(s) ${opts.version}: ${e}")
                         throw e
                     }
                 }
@@ -155,6 +168,9 @@ Map _deployOpts(Map args) {
         podReqMem: args.podReqMem ?: opts.podReqMem,
         podResCpu: args.podResCpu ?: opts.podResCpu,
         podResMem: args.podResMem ?: opts.podResMem,
+
+        testImage: args.testImage ?: opts.testImage,
+        testVersion: args.testVersion ?: opts.testVersion,
     ]
 }
 
@@ -181,4 +197,12 @@ def _postDeploy(Map opts) {
     println 'i.e. Front End may need to handle Cache Bust/Seed'
     println 'i.e. Back End may need to handle Database updates'
     println 'May want to run integration tests after deploy also'
+}
+
+def _testIntegration(Map opts) {
+    if (fileExists('test/integration')) {
+        println 'Running Integration Tests'
+    } else {
+        println 'No Integration Tests Found'
+    }
 }

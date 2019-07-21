@@ -9,17 +9,18 @@ def call(Map args) {
     currentBuild.description = "${opts.appName} ${opts.version}"
     notifySlack("Initiating Build: ${BUILD_URL}")
 
-    podTemplate(label: 'jenkins-slave-docker', containers: [
+    podTemplate(label: "jenkins-build-${opts.appName}", containers: [
         containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
                             args: '${computer.jnlpmac} ${computer.name}', workingDir: "${opts.jnlpWorkDir}",
                             resourceRequestCpu: "${opts.podReqCpu}", resourceLimitCpu: "${opts.podResCpu}",
                             resourceRequestMemory: "${opts.podReqMem}", resourceLimitMemory: "${opts.podResMem}"),
-        containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true)
+        containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true),
+        containerTemplate(name: 'test', image: "${opts.testImage}:${opts.testVersion}", command: 'cat', ttyEnabled: true),
     ],
     volumes:[
         hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
     ]) {
-        node ('jenkins-slave-docker') {
+        node ("jenkins-build-${opts.appName}") {
             withCredentials([string(credentialsId: 'aws-id', variable: 'AWS_ID')]) {
 
                 def dockerRepo = "https://${AWS_ID}.dkr.ecr.${opts.region}.amazonaws.com"
@@ -41,9 +42,26 @@ def call(Map args) {
                     }
                 }
 
+                stage('Unit Tests') {
+                    container('test') {
+                        try {
+                            // Execute Unit Tests within "test" container since every coding language varies
+                            args.testUnit ? args.testUnit.call(opts) : _testUnit(opts)
+                        } catch (e) {
+                            notifySlack("ERROR Failed Unit Test(s) ${opts.version}: ${e}")
+                            throw e
+                        }
+                    }
+                }
+
                 stage('Tagging') {
                     try {
-                        def topTag = sh (script: 'git describe --abbrev=0 --tags', returnStdout: true).trim()
+                        def topTag = ''
+                        try {
+                            topTag = sh (script: 'git describe --abbrev=0 --tags', returnStdout: true).trim()
+                        } catch (e) {
+                            topTag = 'v0.0.0'
+                        }
                         def topText = sh (script: 'git show --name-status', returnStdout: true).trim()
                         def oldVersion = new SemVer(topTag)
 
@@ -70,7 +88,6 @@ def call(Map args) {
                     container('docker') {
                         try {
                             docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flagRepo}", "ecr:${opts.region}:jenkins-iam") {
-                                println 'Execute Unit Tests within Dockerfile since every coding language varies'
                                 args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
 
                                 def buildArgs = ''
@@ -155,11 +172,22 @@ Map _buildOpts(Map args) {
         podResMem: args.podResMem ?: opts.podResMem,
 
         pushGitTags: args.pushGitTags ?: opts.pushGitTags,
+
+        testImage: args.testImage ?: opts.testImage,
+        testVersion: args.testVersion ?: opts.testVersion,
     ]
 }
 
 def _dockerBuildArgs(Map opts) {
     opts.buildArgs.APP_VER = opts.nextVersion
+}
+
+def _testUnit(Map opts) {
+    if (fileExists('test/unit')) {
+        println 'Running Unit Tests'
+    } else {
+        println 'No Unit Tests Found'
+    }
 }
 
 class SemVer implements Serializable {

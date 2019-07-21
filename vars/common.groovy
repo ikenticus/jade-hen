@@ -27,5 +27,8 @@ def podOpts() {
         podResMem: '512Mi',
 
         pushGitTags: false,
+
+        testImage: 'alpine',
+        testVersion: 'latest',
     ]
 }
