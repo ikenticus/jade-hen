@@ -4,7 +4,7 @@ def call(Map args) {
     properties([
         disableConcurrentBuilds(),
         parameters([
-            string(description: 'Version should match git tag as well as image tag, for example: v1.2.3\nfor test use branch slug',
+            string(description: 'Version should match git tag as well as image tag, for example: v1.2.3\nfor test use case-sensitive branch name',
                    name: 'version',
                    defaultValue: ''
             ),
@@ -48,7 +48,7 @@ def call(Map args) {
                     deleteDir()
                     def branch = opts.master
                     if (opts.namespace == 'test') {
-                        branch = opts.version
+                        branch = opts.branch
                     }
                     checkout([
                         $class: 'GitSCM',
@@ -123,15 +123,16 @@ def call(Map args) {
 
 Map _deployOpts(Map args) {
     def opts = common.podOpts()
+    def version = args.version.replace('_', '-').toLowerCase()
 
     def flagRepo = 'test'
     def helmRelease = "${args.appName}-${args.namespace}"
     if (args.continuous == 'deployment') {
         // append version to release to avoid deployment overwrite
-        helmRelease += "-${args.version}".replace('.', 'o')
+        helmRelease += "-${version}".replace('.', 'o')
     }
     if (args.namespace == 'test') {
-        helmRelease = "${args.appName}-${args.version}"
+        helmRelease = "${args.appName}-${version}"
     } else {
         flagRepo = 'live'
     }
@@ -140,15 +141,16 @@ Map _deployOpts(Map args) {
     def helmArgs = args.helmValues ?: [:]
     def helmValues = [
         'image.flag': args.flagRepo ?: flagRepo,
-        'image.tag': args.version,
+        'image.tag': version,
         'ingress.hosts[0]': fqdn,
     ] << helmArgs
 
     return [
+        branch: args.version,
         continuous: args.continuous ?: opts.continuous,
         master: args.master ?: opts.master,
         namespace: args.namespace ?: 'test',
-        version: args.version,
+        version: version,
 
         helmChart: args.appName,
         helmImage: args.helmImage ?: opts.helmImage,

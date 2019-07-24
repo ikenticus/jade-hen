@@ -127,10 +127,14 @@ def call(Map args) {
 
                 stage('Deploy') {
                     try {
+                        opts.branch = env.BRANCH_NAME
+                        if (env.BRANCH_NAME == opts.master) {
+                            opts.branch = opts.version
+                        }
                         println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
                         build job: "deploy-${opts.appName}", wait: false, parameters: [
                             string(name: 'master', value: opts.master),
-                            string(name: 'version', value: opts.version),
+                            string(name: 'version', value: opts.branch),
                             string(name: 'namespace', value: opts.namespace),
                             string(name: 'continuous', value: opts.continuous)
                         ]
