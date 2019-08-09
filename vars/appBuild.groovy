@@ -127,18 +127,43 @@ def call(Map args) {
 
                 stage('Deploy') {
                     try {
+                        def autodeploy = true
+                        def reason = 'unknown issues'
                         opts.branch = env.BRANCH_NAME
                         if (env.BRANCH_NAME == opts.master) {
                             opts.branch = opts.version
+                        } else if (args.includes) {
+                            autodeploy = false
+                            reason = 'include patterns'
+                            args.includes.each {
+                                if (env.BRANCH_NAME.contains(it)) {
+                                    autodeploy = true
+                                    println "Include ${it}"
+                                }
+                            }
                         }
-                        println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
-                        build job: "deploy-${opts.appName}", wait: false, parameters: [
-                            string(name: 'master', value: opts.master),
-                            string(name: 'version', value: opts.branch),
-                            string(name: 'namespace', value: opts.namespace),
-                            string(name: 'continuous', value: opts.continuous)
-                        ]
-                        notifySlack("SUCCESS Building ${opts.version}: ${BUILD_URL}console")
+                        if (args.excludes && autodeploy) {
+                            args.excludes.each { exclude ->
+                                if (env.BRANCH_NAME.contains(exclude)) {
+                                    autodeploy = false
+                                    reason = 'exclude patterns'
+                                    println "Exclude ${exclude}"
+                                }
+                            }
+                        }
+                        if (autodeploy) {
+                            println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
+                            build job: "deploy-${opts.appName}", wait: false, parameters: [
+                                string(name: 'master', value: opts.master),
+                                string(name: 'version', value: opts.branch),
+                                string(name: 'namespace', value: opts.namespace),
+                                string(name: 'continuous', value: opts.continuous)
+                            ]
+                            notifySlack("SUCCESS Building ${opts.version}: ${BUILD_URL}console")
+                        } else {
+                            notifySlack("""SUCCESS Building ${opts.version}: ${BUILD_URL}console
+                                AutoDeploy cancelled due to ${reason}.""")
+                        }
                     } catch (e) {
                         notifySlack("ERROR Building ${opts.version}: ${e} (${BUILD_URL}console)")
                         throw e
