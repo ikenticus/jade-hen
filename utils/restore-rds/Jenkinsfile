@@ -26,6 +26,9 @@ podTemplate(label: 'jenkins-slave', containers: [
             node ('jenkins-slave') {
                 container('awscli') {
                     stage('Verify DNS') {
+                        if ("${env.JOB_NAME}".startsWith("restore-rds-")) {
+                            appName = env.JOB_NAME.replaceAll("restore-rds-", "")
+                        }
                         def allZones = sh(returnStdout: true, script: "aws route53 list-hosted-zones").trim()
                         def zones = new JsonSlurperClassic().parseText(allZones)['HostedZones']
                         zoneID = ''
@@ -77,8 +80,13 @@ podTemplate(label: 'jenkins-slave', containers: [
                     stage('Restore RDS') {
                         sh """
                             aws rds restore-db-instance-from-db-snapshot --vpc-security-group-ids ${vsgIDs} \
-                            --db-instance-identifier ${newRDS} --db-snapshot-identifier ${srcSID} --region ${region}
+                            --db-instance-identifier ${newRDS} --db-snapshot-identifier ${srcSID} \
+                            --region ${region} --no-multi-az --db-instance-class db.t2.micro
                         """
+                        // aws rds restore-db-cluster-from-s3
+                        // the following arguments are required:
+                        // --db-cluster-identifier, --engine, --master-username, --master-user-password,
+                        // --source-engine, --source-engine-version, --s3-bucket-name, --s3-ingestion-role-arn
                     }
 
                     stage('RDS Status') {
@@ -136,10 +144,12 @@ podTemplate(label: 'jenkins-slave', containers: [
                     }
 
                     stage('Delete RDS') {
-                        sh """
-                            aws rds delete-db-instance --skip-final-snapshot \
-                            --db-instance-identifier ${dstRDS} --region ${region}
-                        """
+                        if (dstRDS) {
+                            sh """
+                                aws rds delete-db-instance --skip-final-snapshot \
+                                --db-instance-identifier ${dstRDS} --region ${region}
+                                """
+                        }
                     }
                 }
             }
