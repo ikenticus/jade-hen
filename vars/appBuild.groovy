@@ -10,10 +10,6 @@ def call(Map args) {
     notifySlack("Initiating Build: ${BUILD_URL}")
 
     podTemplate(label: "jenkins-build-${opts.appName}", containers: [
-        containerTemplate(name: 'jnlp', image: "${opts.jnlpImage}:${opts.jnlpVersion}",
-                            args: '${computer.jnlpmac} ${computer.name}', workingDir: "${opts.jnlpWorkDir}",
-                            resourceRequestCpu: "${opts.podReqCpu}", resourceLimitCpu: "${opts.podResCpu}",
-                            resourceRequestMemory: "${opts.podReqMem}", resourceLimitMemory: "${opts.podResMem}"),
         containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true),
         containerTemplate(name: 'test', image: "${opts.testImage}:${opts.testVersion}", command: 'cat', ttyEnabled: true),
     ],
@@ -190,15 +186,6 @@ Map _buildOpts(Map args) {
 
         dockerImage: args.dockerImage ?: opts.dockerImage,
         dockerVersion: args.dockerVersion ?: opts.dockerVersion,
-
-        jnlpImage: args.jnlpImage ?: opts.jnlpImage,
-        jnlpVersion: args.jnlpVersion ?: opts.jnlpVersion,
-        jnlpWorkDir: args.jnlpWorkDir ?: opts.jnlpWorkDir,
-
-        podReqCpu: args.podReqCpu ?: opts.podReqCpu,
-        podReqMem: args.podReqMem ?: opts.podReqMem,
-        podResCpu: args.podResCpu ?: opts.podResCpu,
-        podResMem: args.podResMem ?: opts.podResMem,
 
         pushGitTags: args.pushGitTags ?: opts.pushGitTags,
 

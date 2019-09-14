@@ -17,15 +17,6 @@ def podOpts() {
         kubeImage: 'ikenticus/kubectl',
         kubeVersion: 'latest',
 
-        jnlpImage: 'jenkins/jnlp-slave',
-        jnlpVersion: 'latest-jdk11',
-        jnlpWorkDir: '/home/jenkins',
-
-        podReqCpu: '200m',
-        podReqMem: '256Mi',
-        podResCpu: '300m',
-        podResMem: '512Mi',
-
         pushGitTags: false,
 
         testImage: 'alpine',

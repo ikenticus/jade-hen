@@ -14,10 +14,6 @@ properties([
 ])
 
 podTemplate(label: 'jenkins-slave-helm', containers: [
-    containerTemplate(name: 'jnlp', image: 'jenkins/jnlp-slave:latest-jdk11',
-                        args: '${computer.jnlpmac} ${computer.name}', workingDir: '/home/jenkins',
-                        resourceRequestCpu: '200m', resourceLimitCpu: '300m',
-                        resourceRequestMemory: '256Mi', resourceLimitMemory: '512Mi'),
     containerTemplate(name: 'helm', image: 'alpine/helm:2.14.0', command: 'cat', ttyEnabled: true)
 ]) {
     ansiColor('xterm') {
