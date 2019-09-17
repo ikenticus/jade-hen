@@ -1,0 +1,57 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ecr",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:BatchDeleteImage"
+            ],
+            "Resource": [
+                "arn:aws:ecr:*:*:*"
+            ]
+        },
+        {
+            "Sid": "rds",
+            "Effect": "Allow",
+            "Action": [
+                "rds:DeleteDBInstance",
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBSnapshots",
+                "rds:RestoreDBInstanceFromDBSnapshot"
+            ],
+            "Resource": [
+                "arn:aws:rds:*:*:*"
+            ]
+        },
+        {
+            "Sid": "route53",
+            "Effect": "Allow",
+            "Action": [
+                "route53:GetChange"
+            ],
+            "Resource": [
+                "arn:aws:route53:::change/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                        "s3:GetBucketLocation",
+                        "s3:GetObject",
+                        "s3:ListAllMyBuckets",
+                        "s3:PutObject"
+                      ],
+            "Resource": "arn:aws:s3:::*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::jade-hen",
+                "arn:aws:s3:::jade-hen/*"
+            ]
+        }
+    ]
+}
+

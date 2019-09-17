@@ -1,0 +1,46 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+import java.text.SimpleDateFormat
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H 4 * * *')]),
+    parameters([
+        string(description: 'Namespace', name: 'namespace', defaultValue: 'test'),
+        string(description: 'Days back', name: 'days', defaultValue: '7'),
+    ])
+])
+
+podTemplate(label: 'jenkins-slave-helm', containers: [
+    containerTemplate(name: 'helm', image: 'alpine/helm:2.12.3', command: 'cat', ttyEnabled: true)
+]) {
+    ansiColor('xterm') {
+        node ('jenkins-slave-helm') {
+            stage('Cleaning') {
+                container('helm') {
+                    def pastDate = new Date().minus(days.toInteger())
+
+                    def helmList = sh(returnStdout: true, script: "helm list --namespace ${namespace} --output json").trim()
+                    try {
+                        def helmJson = new JsonSlurperClassic().parseText(helmList)
+                        for (i = 0; i < helmJson.Releases.size(); i++) {
+                            def helmChart = helmJson.Releases[i].Name
+                            def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
+                            def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
+
+                            if (helmDate < pastDate) {
+                                println "${helmChart} (${helmDate}) is OLDER than ${days} days"
+                                sh "helm delete ${helmChart} --purge"
+                            } else {
+                                println "${helmChart} (${helmDate}) is newer than ${days} days"
+                            }
+                        }
+                    } catch (e) {
+                        echo "No helm deployments found in ${namespace}"
+                    }
+                }
+            }
+        }
+    }
+}

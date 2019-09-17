@@ -1,0 +1,95 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H 3 * * *')]),
+    parameters([
+        string(description: 'Namespace of Jenkins master', name: 'namespace', defaultValue: 'tools'),
+        string(description: 'S3 Bucket for backups', name: 'bucket', defaultValue: 'bucket-name'),
+        string(description: 'S3 Prefix for backups', name: 'prefix', defaultValue: 'jenkins'),
+        string(description: 'Max number of backups', name: 'maxnum', defaultValue: '7'),
+    ])
+])
+
+podTemplate(label: 'jenkins-slave', containers: [
+    containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
+    containerTemplate(name: 'kube', image: 'ikenticus/kubectl:latest', command: 'cat', ttyEnabled: true),
+]) {
+    ansiColor('xterm') {
+        timeout(time: 20, unit: 'MINUTES') {
+            node ('jenkins-slave') {
+                stage('Get Jenkins') {
+                    container('kube') {
+                        action = 'backup'
+                        if ("${env.JOB_NAME}".endsWith("-restore")) {
+                            action = 'restore'
+                        }
+                        def releases = sh (
+                            returnStdout: true,
+                            script: "kubectl get pods -n ${namespace} --selector=app.kubernetes.io/name=jenkins -o name"
+                        ).trim()
+                        pod = releases.split('\n')[0].split('/')[-1]
+                    }
+                }
+
+                if (action == 'restore') {
+                    stage('Transfer S3') {
+                        container('awscli') {
+                            def backups = sh (
+                                returnStdout: true,
+                                script: "aws s3 ls s3://${bucket}/${prefix}/"
+                            ).trim()
+                            zips = backups.split('\n')
+                            for (z = 0; z < zips.size(); z++) {
+                                if (zips[z].endsWith('zip')) {
+                                    def zip = zips[z].split(' ')[-1]
+                                    sh "aws s3 cp s3://${bucket}/${prefix}/${zip} ${zip}"
+                                }
+                                if (z > maxnum) break
+                            }
+                        }
+                    }
+                    stage('Transfer k8s') {
+                        container('kube') {
+                            for (z = 0; z < zips.size(); z++) {
+                                if (zips[z].endsWith('zip')) {
+                                    def zip = zips[z].split(' ')[-1]
+                                    sh "kubectl cp ${zip} ${pod}:/var/backups/${zip} -n ${namespace}"
+                                }
+                                if (z > maxnum) break
+                            }
+                        }
+                    }
+                } else {
+                    stage('Transfer k8s') {
+                        container('kube') {
+                            def backups = sh (
+                                returnStdout: true,
+                                script: "kubectl exec -it ${pod} -n ${namespace} -- ls -1t /var/backups"
+                            ).trim()
+                            zips = backups.split('\n')
+                            for (z = 0; z < zips.size(); z++) {
+                                if (zips[z].endsWith('zip')) {
+                                    sh "kubectl cp ${pod}:/var/backups/${zips[z]} ${zips[z]} -n ${namespace}"
+                                }
+                                if (z > maxnum) break
+                            }
+                        }
+                    }
+                    stage('Transfer S3') {
+                        container('awscli') {
+                            for (z = 0; z < zips.size(); z++) {
+                                if (zips[z].endsWith('zip')) {
+                                    sh "aws s3 cp ${zips[z]} s3://${bucket}/${prefix}/${zips[z]}"
+                                }
+                                if (z > maxnum) break
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

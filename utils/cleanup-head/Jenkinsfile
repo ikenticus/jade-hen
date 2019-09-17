@@ -1,0 +1,126 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+import java.text.SimpleDateFormat
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H 4 * * *')]),
+    parameters([
+        string(description: 'Region', name: 'region', defaultValue: 'us-east-4'),
+        string(description: 'Namespace', name: 'namespace', defaultValue: 'test'),
+        string(description: 'Repositories (ECR)', name: 'repos', defaultValue: '/s3fs,/test,/live'),
+        string(description: 'Days back (helm)', name: 'days', defaultValue: '14'),
+        string(description: 'Skip branches (helm)', name: 'skip', defaultValue: 'dev,development,qa,release-candidate'),
+    ])
+])
+
+podTemplate(label: 'jenkins-cleanup', containers: [
+    containerTemplate(name: 'docker', image: 'docker:latest', command: 'cat', ttyEnabled: true),
+    containerTemplate(name: 'helm', image: 'alpine/helm:2.14.0', command: 'cat', ttyEnabled: true),
+    containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
+],
+volumes:[
+    hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
+]) {
+    ansiColor('xterm') {
+        node ('jenkins-cleanup') {
+
+            stage('Cleaning docker') {
+                container('docker') {
+                    sh "docker images"
+                    sh "docker system prune -af"
+                    sh "docker images"
+                }
+            }
+
+            stage('Cleaning helm') {
+                container('helm') {
+                    // may need to upgrade tiller to access namespaces, depending on helm version
+                    //sh 'helm init'
+                    //sh 'helm init --service-account tiller --upgrade'
+
+                    def excludes = skip.split(',')
+                    def pastDate = new Date().minus(days.toInteger())
+                    try {
+                        def helmList = sh(returnStdout: true, script: "helm list --namespace ${namespace} --output json").trim()
+                        def helmJson = new JsonSlurperClassic().parseText(helmList)
+                        for (i = 0; i < helmJson.Releases.size(); i++) {
+                            def helmChart = helmJson.Releases[i].Name
+                            def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
+                            def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
+
+                            def helmPrefix = helmJson.Releases[i].Chart.tokenize('-')[0..-2].join('-')
+                            def helmBranch = helmChart.replace(helmPrefix+'-', '')
+                            if (excludes.contains(helmBranch)) {
+                                println "${helmChart} matches exclusion list"
+                            } else if (helmDate >= pastDate) {
+                                println "${helmChart} (${helmDate}) is newer than ${days} days"
+                            } else {
+                                println "${helmChart} (${helmDate}) is OLDER than ${days} days"
+                                sh "helm delete ${helmChart} --purge"
+                            }
+                        }
+                    } catch (e) {
+                        echo "No helm deployments found in ${namespace}"
+                    }
+                }
+            }
+
+            stage('Cleaning ECR') {
+                container('awscli') {
+                    def target = repos.split(',')
+                    def repoList = sh(returnStdout: true,
+                            script: "aws ecr describe-repositories --region ${region} --query repositories[].repositoryName"
+                        ).trim()
+                    try {
+                        def repoJson = new JsonSlurperClassic().parseText(repoList)
+                        for (repo in repoJson) {
+                            def valid = false
+                            for (test in target) {
+                                if (test.startsWith('/')) {
+                                    if (repo.endsWith(test)) {
+                                        valid = true
+                                    }
+                                } else if (repo == test) {
+                                    valid = true
+                                }
+                            }
+                            if (!valid) continue
+                            println "Searching for untagged images in ${repo}"
+                            try {
+                                def imageList = sh(returnStdout: true,
+                                                script: """
+                                                    aws ecr list-images --repository-name ${repo} --region ${region} \
+                                                    --filter tagStatus=UNTAGGED --query imageIds[].imageDigest
+                                                """).trim()
+                                try {
+                                    def imageJson = new JsonSlurperClassic().parseText(imageList)
+                                    if (imageJson.isEmpty()) {
+                                        println "No untagged images found in repository ${repo}"
+                                    } else {
+                                        def imageBatch = imageJson.join(' imageDigest=')
+                                        sh """
+                                            aws ecr batch-delete-image --repository-name ${repo} \
+                                            --region ${region} --image-ids imageDigest=${imageBatch}
+                                        """
+                                    }
+                                } catch (e) {
+                                    println "Error batch deleting untagged images from repository ${repo}"
+                                    println(e)
+                                }
+                            } catch (e) {
+                                println "Error listing images from repository ${repo}"
+                                println(e)
+                            }
+                        }
+                    } catch (e) {
+                        println "Error describing repositories from ${region}"
+                        println(e)
+                    }
+                }
+            }
+
+        }
+    }
+}
