@@ -18,6 +18,7 @@ def podOpts() {
         kubeVersion: 'latest',
 
         pushGitTags: false,
+        skipAskProd: false,
 
         testImage: 'alpine',
         testVersion: 'latest',

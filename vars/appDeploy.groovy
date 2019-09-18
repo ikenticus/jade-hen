@@ -94,7 +94,7 @@ def call(Map args) {
 
             stage('Post Tasks') {
                 args.postDeploy ? args.postDeploy.call(opts) : _postDeploy(opts)
-                if (opts.namespace == 'staging') {
+                if (opts.namespace == 'staging' && !opts.skipAskProd) {
                     timeout(time: 20, unit: 'HOURS') {
                         try {
                             if (opts.continuous == 'delivery') {
@@ -111,6 +111,8 @@ def call(Map args) {
                             echo "Deployed ${opts.version} to Staging, skipped Production"
                         }
                     }
+                } else {
+                    echo "Deployed ${opts.version} to Staging. Manually deploy to Production when ready."
                 }
             }
         }
@@ -157,6 +159,8 @@ Map _deployOpts(Map args) {
 
         kubeImage: args.kubeImage ?: opts.kubeImage,
         kubeVersion: args.kubeVersion ?: opts.kubeVersion,
+
+        skipAskProd: args.skipAskProd ?: opts.skipAskProd,
 
         testImage: args.testImage ?: opts.testImage,
         testVersion: args.testVersion ?: opts.testVersion,
