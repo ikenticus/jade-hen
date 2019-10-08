@@ -130,7 +130,7 @@ Map _deployOpts(Map args) {
         helmRelease += "-${version}".replace('.', 'o')
     }
     if (args.namespace == 'test') {
-        helmRelease = "${args.appName}-${version}"
+        helmRelease = checkReleaseName(args.appName, version)
     } else {
         flagRepo = 'live'
     }
@@ -165,6 +165,15 @@ Map _deployOpts(Map args) {
         testImage: args.testImage ?: opts.testImage,
         testVersion: args.testVersion ?: opts.testVersion,
     ]
+}
+
+def checkReleaseName(prefix, suffix) {
+    parts = suffix.tokenize('-');
+    for (p = 0; p <= parts.size(); p++) {
+        name = "${prefix}-" + parts[0..-1].join('-');
+        if (name.size() <= 53) return name;
+        parts = parts[0..-2];
+    }
 }
 
 def _helmSetOverrides(Map opts) {
