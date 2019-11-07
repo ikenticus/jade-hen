@@ -54,7 +54,7 @@ def call(Map args) {
                     ])
                     sh 'cat ci/Jenkinsfile.deploy'
                 } catch (e) {
-                    notifySlack("ERROR git Checkout ${opts.version}: ${e}")
+                    notifySlack("ERROR Checkout git ${opts.version}: ${e}")
                     throw e
                 }
             }
@@ -69,7 +69,7 @@ def call(Map args) {
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
                             --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
-                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console")
+                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: ${opts.fqdn}")
                     } catch (e) {
                         notifySlack("ERROR Deploying ${opts.version} to ${opts.namespace}: ${e} (${BUILD_URL}console)")
                         println "Failed to install/upgrade helm chart: ${e.message}"
@@ -111,8 +111,10 @@ def call(Map args) {
                             echo "Deployed ${opts.version} to Staging, skipped Production"
                         }
                     }
-                } else {
+                } else if (opts.namespace == 'staging' && opts.skipAskProd) {
                     echo "Deployed ${opts.version} to Staging. Manually deploy to Production when ready."
+                } else {
+                    echo "Deployed ${opts.version} to {$opts.namespace}."
                 }
             }
         }
@@ -144,6 +146,7 @@ Map _deployOpts(Map args) {
     ] << helmArgs
 
     return [
+        fqdn: fqdn,
         branch: args.version,
         continuous: args.continuous ?: opts.continuous,
         master: args.master ?: opts.master,
@@ -178,6 +181,7 @@ def checkReleaseName(prefix, suffix) {
 
 def _helmSetOverrides(Map opts) {
     def override = "ci/helm/${opts.helmChart}/overrides/"
+    println "Checking ${override} for ${opts.namespace} and ${opts.version}"
     if (fileExists(override + "${opts.namespace}.yaml")) {
         opts.helmOverride = "-f ${override}${opts.namespace}.yaml"
         println "Applying namespace override: ${opts.helmOverride}"

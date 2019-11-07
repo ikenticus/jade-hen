@@ -7,10 +7,11 @@ def call(Map args) {
 
     def opts = args.buildOpts ? args.buildOpts.call(args) : _buildOpts(args)
     currentBuild.description = "${opts.appName} ${opts.version}"
-    notifySlack("Initiating Build: ${BUILD_URL}")
+    notifySlack("INIT Building ${BUILD_URL}")
 
     podTemplate(label: "jenkins-build-${opts.appName}", containers: [
         containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true),
+        containerTemplate(name: 'kube', image: "${opts.kubeImage}:${opts.kubeVersion}", command: 'cat', ttyEnabled: true),
         containerTemplate(name: 'test', image: "${opts.testImage}:${opts.testVersion}", command: 'cat', ttyEnabled: true),
     ],
     volumes:[
@@ -33,7 +34,7 @@ def call(Map args) {
                         opts.version = env.BRANCH_NAME.replace('_', '-').toLowerCase()
                         currentBuild.description = "${opts.appName} ${opts.version}"
                     } catch (e) {
-                        notifySlack("ERROR git Checkout ${opts.version}: ${e}")
+                        notifySlack("ERROR Checkout git ${opts.version}: ${e}")
                         throw e
                     }
                 }
@@ -97,7 +98,7 @@ def call(Map args) {
                             //sh "docker rmi ${opts.appName}/${opts.flagRepo}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flagRepo}:${opts.version}"
                             //sh "docker images"
                         } catch (e) {
-                            notifySlack("ERROR with Docker: ${e}")
+                            notifySlack("ERROR Docker issues: ${e}")
                             throw e
                         }
                     }
@@ -186,6 +187,9 @@ Map _buildOpts(Map args) {
 
         dockerImage: args.dockerImage ?: opts.dockerImage,
         dockerVersion: args.dockerVersion ?: opts.dockerVersion,
+
+        kubeImage: args.kubeImage ?: opts.kubeImage,
+        kubeVersion: args.kubeVersion ?: opts.kubeVersion,
 
         pushGitTags: args.pushGitTags ?: opts.pushGitTags,
 

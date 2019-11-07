@@ -1,5 +1,5 @@
 master:
-  imageTag: lts
+  tag: lts
   cpu: 500m
   memory: 512Mi
   hostName: jenkins.$REGION.test.domain.net
