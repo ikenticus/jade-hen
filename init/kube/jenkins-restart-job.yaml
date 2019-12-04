@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jenkins-safe-restart
+spec:
+  template:
+    spec:
+      containers:
+      - name: jenkins-safe-restart
+        image: alpine:latest
+        env:
+        - name: EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: jenkins-secret-restart
+              key: email
+        - name: TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: jenkins-secret-restart
+              key: token
+        - name: DOMAIN
+          valueFrom:
+            secretKeyRef:
+              name: jenkins-secret-restart
+              key: domain
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - >
+            apk update && apk add --no-cache curl bash && bash -c 
+            " echo \"Safely restarting Jenkins\";
+              curl -X POST -u $EMAIL:$TOKEN http://$DOMAIN/safeRestart
+              "
+      restartPolicy: Never
+  backoffLimit: 4
