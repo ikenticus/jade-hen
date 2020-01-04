@@ -69,7 +69,7 @@ def call(Map args) {
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
                             --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
-                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: ${opts.fqdn}")
+                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: https://${opts.fqdn}")
                     } catch (e) {
                         notifySlack("ERROR Deploying ${opts.version} to ${opts.namespace}: ${e} (${BUILD_URL}console)")
                         println "Failed to install/upgrade helm chart: ${e.message}"
@@ -114,7 +114,7 @@ def call(Map args) {
                 } else if (opts.namespace == 'staging' && opts.skipAskProd) {
                     echo "Deployed ${opts.version} to Staging. Manually deploy to Production when ready."
                 } else {
-                    echo "Deployed ${opts.version} to {$opts.namespace}."
+                    echo "Deployed ${opts.version} to ${opts.namespace}."
                 }
             }
         }
@@ -132,7 +132,7 @@ Map _deployOpts(Map args) {
         helmRelease += "-${version}".replace('.', 'o')
     }
     if (args.namespace == 'test') {
-        helmRelease = checkReleaseName(args.appName, version)
+        helmRelease = common.checkReleaseName(args.appName, version)
     } else {
         flagRepo = 'live'
     }
@@ -168,15 +168,6 @@ Map _deployOpts(Map args) {
         testImage: args.testImage ?: opts.testImage,
         testVersion: args.testVersion ?: opts.testVersion,
     ]
-}
-
-def checkReleaseName(prefix, suffix) {
-    parts = suffix.tokenize('-');
-    for (p = 0; p <= parts.size(); p++) {
-        name = "${prefix}-" + parts[0..-1].join('-');
-        if (name.size() <= 53) return name;
-        parts = parts[0..-2];
-    }
 }
 
 def _helmSetOverrides(Map opts) {

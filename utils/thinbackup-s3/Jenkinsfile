@@ -28,7 +28,8 @@ podTemplate(label: 'jenkins-slave', containers: [
                         }
                         def releases = sh (
                             returnStdout: true,
-                            script: "kubectl get pods -n ${namespace} --selector=app.kubernetes.io/name=jenkins -o name"
+                            script: """kubectl get pods -n ${namespace} --field-selector status.phase=Running \
+                                        --selector=app.kubernetes.io/name=jenkins -o name"""
                         ).trim()
                         pod = releases.split('\n')[0].split('/')[-1]
                     }

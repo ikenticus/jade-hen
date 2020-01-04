@@ -7,7 +7,7 @@ def call(Map args) {
 
     def opts = args.buildOpts ? args.buildOpts.call(args) : _buildOpts(args)
     currentBuild.description = "${opts.appName} ${opts.version}"
-    notifySlack("INIT Building ${BUILD_URL}")
+    notifySlack("INIT Build branch: ${BUILD_URL}")
 
     podTemplate(label: "jenkins-build-${opts.appName}", containers: [
         containerTemplate(name: 'docker', image: "${opts.dockerImage}:${opts.dockerVersion}", command: 'cat', ttyEnabled: true),
@@ -200,6 +200,8 @@ Map _buildOpts(Map args) {
 
 def _dockerBuildArgs(Map opts) {
     opts.buildArgs.APP_VER = opts.nextVersion
+    def route53 = common.checkReleaseName(opts.appName, opts.version)
+    opts.buildArgs.SITE_HOST = "https://${route53}.${opts.region}.${opts.domain}"
 }
 
 def _testUnit(Map opts) {

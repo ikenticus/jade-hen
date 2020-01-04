@@ -1,7 +1,7 @@
 master:
   tag: lts
-  cpu: 500m
-  memory: 512Mi
+  cpu: 800m
+  memory: 1Gi
   hostName: jenkins.$REGION.test.domain.net
   serviceType: ClusterIP
   serviceAnnotations:
@@ -10,17 +10,17 @@ master:
     - amazon-ecr:1.6
     - ansicolor:0.6.2
     - aws-credentials:1.28
-    - blueocean:1.19.0
+    - blueocean:1.21.0
     - credentials-binding:1.20
-    - git:3.12.1
+    - git:4.0.0
     - google-login:1.6
-    - kubernetes:1.19.3
+    - kubernetes:1.22.1
     - pipeline-graph-analysis:1.10
     - pipeline-stage-view:2.12
-    - slack:2.34
+    - slack:2.35
     - ssh-agent:1.17
     - thinBackup:1.9
-    - workflow-job:2.35
+    - workflow-job:2.36
 
   ingress:
     enabled: true
