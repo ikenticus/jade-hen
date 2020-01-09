@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "my-app.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "my-app.name" . }}
+    helm.sh/chart: {{ include "my-app.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "my-app.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "my-app.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}/{{ .Values.image.flag }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ingress.port }}
+              protocol: TCP
+          env:
+          - name: MYSQL_DATABASE
+            value: {{ .Values.environment.mysql_database }}
+          - name: MYSQL_HOST
+            value: {{ .Values.environment.mysql_host }}
+          - name: MYSQL_PORT
+            value: "{{ .Values.environment.mysql_port }}"
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.environment.secretKeyRef }}
+                key: mysql_user
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.environment.secretKeyRef }}
+                key: mysql_pass
+          {{- if .Values.probes }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ .Values.probes.port }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ .Values.probes.port }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.testdb }}
+          volumeMounts:
+          - name: mysqlsock
+            mountPath: {{ .Values.volume.testdb.mountPath }}
+            mountPropagation: HostToContainer
+        - name: {{ .Values.testdb.name }}
+          image: "{{ .Values.testdb.image }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: mysql
+              containerPort: {{ .Values.environment.mysql_port }}
+          env:
+          - name: MYSQL_DATABASE
+            value: {{ .Values.environment.mysql_database }}
+          - name: MYSQL_HOST
+            value: {{ .Values.environment.mysql_host }}
+          - name: MYSQL_PORT
+            value: "{{ .Values.environment.mysql_port }}"
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.environment.secretKeyRef }}
+                key: mysql_user
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.environment.secretKeyRef }}
+                key: mysql_pass
+          #- name: MYSQL_RANDOM_ROOT_PASSWORD
+          #  value: 'yes'
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.environment.secretKeyRef }}
+                key: mysql_pass
+          volumeMounts:
+          - name: mysqlsock
+            mountPath: {{ .Values.volume.testdb.mountPath }}
+            mountPropagation: HostToContainer
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+      - name: sharedfs
+        hostPath:
+          path: {{ .Values.volume.sharedfs.hostPath }}
+      - name: patches
+        hostPath:
+          path: {{ .Values.volume.patches.hostPath }}
+      {{- if .Values.testdb }}
+      - name: mysqlsock
+        emptyDir: {}
+      {{- end }}

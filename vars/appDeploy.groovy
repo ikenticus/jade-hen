@@ -52,7 +52,7 @@ def call(Map args) {
                         userRemoteConfigs: scm.userRemoteConfigs,
                         extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
                     ])
-                    sh 'cat ci/Jenkinsfile.deploy'
+                    //sh 'cat ci/Jenkinsfile.deploy'
                 } catch (e) {
                     notifySlack("ERROR Checkout git ${opts.version}: ${e}")
                     throw e
