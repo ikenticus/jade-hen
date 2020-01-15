@@ -1,24 +1,30 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: {{ include "s3fs.fullname" . }}
   labels:
+    app: s3fs
     app.kubernetes.io/name: {{ include "s3fs.name" . }}
     helm.sh/chart: {{ include "s3fs.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
+      app: s3fs
       app.kubernetes.io/name: {{ include "s3fs.name" . }}
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
+        app: s3fs
+        tier: storage
         app.kubernetes.io/name: {{ include "s3fs.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -49,9 +55,6 @@ spec:
             mountPath: /dev/fuse
           - name: sharedfs
             mountPath: {{ .Values.environment.mntpoint }}:shared
-      dnsPolicy: ClusterFirst
-      restartPolicy: Always
-      securityContext: {}
       terminationGracePeriodSeconds: 30
       volumes:
       - name: devfuse
