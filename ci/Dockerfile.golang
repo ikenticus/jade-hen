@@ -1,4 +1,6 @@
-FROM paas-docker-artifactory.gannettdigital.com/paas-scratch-base:latest
+ARG GO_VER=alpine
+
+FROM golang:${GO_VER}
 MAINTAINER Domain Team <team@domain.com>
 
 COPY app-name /

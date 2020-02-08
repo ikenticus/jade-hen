@@ -2,7 +2,7 @@
 
 def call(Map args) {
     properties([
-        disableConcurrentBuilds(),
+        //disableConcurrentBuilds(),
         parameters([
             string(description: 'Version should match git tag as well as image tag, for example: v1.2.3\nfor test use case-sensitive branch name',
                    name: 'version',
@@ -69,7 +69,12 @@ def call(Map args) {
                             helm upgrade ${opts.helmRelease} ci/helm/${opts.helmChart} --recreate-pods \
                             --install --namespace ${opts.namespace} --set ${values} ${opts.helmOverride}
                         """
-                        notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: https://${opts.fqdn}")
+
+                        //notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: https://${opts.fqdn}")
+                        // Retrieve active FQDN from NOTES:
+                        def helmStat = sh(returnStdout: true, script: "helm status ${opts.helmRelease}").trim()
+                        def helmNote = helmStat.split("\n")
+                        viewHost = helmNote[-1].trim()
                     } catch (e) {
                         notifySlack("ERROR Deploying ${opts.version} to ${opts.namespace}: ${e} (${BUILD_URL}console)")
                         println "Failed to install/upgrade helm chart: ${e.message}"
@@ -95,7 +100,7 @@ def call(Map args) {
             stage('Post Tasks') {
                 args.postDeploy ? args.postDeploy.call(opts) : _postDeploy(opts)
                 if (opts.namespace == 'staging' && !opts.skipAskProd) {
-                    timeout(time: 20, unit: 'HOURS') {
+                    timeout(time: 20, unit: 'MINUTES') {
                         try {
                             if (opts.continuous == 'delivery') {
                                 input "Deploy ${opts.version} to Production?"
@@ -116,6 +121,7 @@ def call(Map args) {
                 } else {
                     echo "Deployed ${opts.version} to ${opts.namespace}."
                 }
+                notifySlack("SUCCESS Deploying ${opts.version} to ${opts.namespace}: ${BUILD_URL}console\n :eye: ${viewHost}")
             }
         }
     }
@@ -173,12 +179,12 @@ Map _deployOpts(Map args) {
 def _helmSetOverrides(Map opts) {
     def override = "ci/helm/${opts.helmChart}/overrides/"
     println "Checking ${override} for ${opts.namespace} and ${opts.version}"
-    if (fileExists(override + "${opts.namespace}.yaml")) {
-        opts.helmOverride = "-f ${override}${opts.namespace}.yaml"
-        println "Applying namespace override: ${opts.helmOverride}"
-    } else if (fileExists(override + "${opts.version}.yaml")) {
+    if (fileExists(override + "${opts.version}.yaml")) {
         opts.helmOverride = "-f ${override}${opts.version}.yaml"
         println "Applying version override: ${opts.helmOverride}"
+    } else if (fileExists(override + "${opts.namespace}.yaml")) {
+        opts.helmOverride = "-f ${override}${opts.namespace}.yaml"
+        println "Applying namespace override: ${opts.helmOverride}"
     }
 }
 

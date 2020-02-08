@@ -31,6 +31,21 @@ def call(Map args) {
                             userRemoteConfigs: scm.userRemoteConfigs,
                             extensions: [[$class: 'CloneOption', noTags: false, shallow: false, depth: 0, reference: '']]
                         ])
+
+                        if (BUILD_NUMBER.toInteger() > 1 && !opts.skipGitDiff) {
+                            // first build NEVER gets to skip Docker stage
+                            println "Checking git differences:"
+                            opts.skipBuild = true
+                            gitDiff = sh(script: "git diff --name-only HEAD~1", returnStdout: true).trim()
+                            for (file in gitDiff.split('\n')) {
+                                if (!file.startsWith('ci/helm/')) {
+                                    opts.skipBuild = false
+                                }
+                            }
+                            println gitDiff
+                            println "Skip docker build: ${opts.skipBuild}"
+                        }
+
                         opts.version = env.BRANCH_NAME.replace('_', '-').toLowerCase()
                         currentBuild.description = "${opts.appName} ${opts.version}"
                     } catch (e) {
@@ -40,13 +55,15 @@ def call(Map args) {
                 }
 
                 stage('Unit Tests') {
-                    container('test') {
-                        try {
-                            // Execute Unit Tests within "test" container since every coding language varies
-                            args.testUnit ? args.testUnit.call(opts) : _testUnit(opts)
-                        } catch (e) {
-                            notifySlack("ERROR Failed Unit Test(s) ${opts.version}: ${e}")
-                            throw e
+                    if (!opts.skipBuild) {
+                        container('test') {
+                            try {
+                                // Execute Unit Tests within "test" container since every coding language varies
+                                args.testUnit ? args.testUnit.call(opts) : _testUnit(opts)
+                            } catch (e) {
+                                notifySlack("ERROR Failed Unit Test(s) ${opts.version}: ${e}")
+                                throw e
+                            }
                         }
                     }
                 }
@@ -63,7 +80,7 @@ def call(Map args) {
                         def oldVersion = new SemVer(topTag)
 
                         // pushGitTags assumes automatic version bump, else leave as-is
-                        if (opts.pushGitTags) {
+                        if (opts.pushGitTags && !opts.skipBuild) {
                             opts.nextVersion = oldVersion.bump(topText).toString()
                         } else {
                             opts.nextVersion = oldVersion.toString()
@@ -82,42 +99,44 @@ def call(Map args) {
                 }
 
                 stage('Build') {
-                    container('docker') {
-                        try {
-                            docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flagRepo}", "ecr:${opts.region}:jenkins-iam") {
-                                args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
+                    if (!opts.skipBuild) {
+                        container('docker') {
+                            try {
+                                docker.withRegistry("${dockerRepo}/${opts.appName}/${opts.flagRepo}", "ecr:${opts.region}:jenkins-iam") {
+                                    args.dockerBuildArgs ? args.dockerBuildArgs.call(opts) : _dockerBuildArgs(opts)
 
-                                def buildArgs = ''
-                                if (opts.buildArgs.size() > 0) {
-                                    buildArgs = '--build-arg ' + opts.buildArgs.collect { key, value -> "${key}=${value}" }.join(' --build-arg ')
+                                    def buildArgs = ''
+                                    if (opts.buildArgs.size() > 0) {
+                                        buildArgs = '--build-arg ' + opts.buildArgs.collect { key, value -> "${key}=${value}" }.join(' --build-arg ')
+                                    }
+                                    docker.build("${opts.appName}/${opts.flagRepo}:${opts.version}",
+                                        "--network host ${buildArgs} -f ci/Dockerfile .").push()
                                 }
-                                docker.build("${opts.appName}/${opts.flagRepo}:${opts.version}",
-                                    "--network host ${buildArgs} -f ci/Dockerfile .").push()
+                                sh "docker images"
+                                //sh "docker rmi ${opts.appName}/${opts.flagRepo}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flagRepo}:${opts.version}"
+                                //sh "docker images"
+                            } catch (e) {
+                                notifySlack("ERROR Docker issues: ${e}")
+                                throw e
                             }
-                            sh "docker images"
-                            //sh "docker rmi ${opts.appName}/${opts.flagRepo}:${opts.version} ${dockerRepo}/${opts.appName}/${opts.flagRepo}:${opts.version}"
-                            //sh "docker images"
-                        } catch (e) {
-                            notifySlack("ERROR Docker issues: ${e}")
-                            throw e
                         }
-                    }
 
-                    if (opts.pushGitTags && env.BRANCH_NAME == opts.master) {
-                        try {
-                            withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-https',
-                                usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD']]
-                            ) {
-                                sh "git config user.email jenkins@${opts.domain}"
-                                sh 'git config user.name jenkins'
-                                sh "git config credential.username ${env.GIT_USERNAME}"
-                                sh "git config credential.helper '!f() { echo password=\$GIT_PASSWORD; }; f'"
-                                sh "git tag -a ${opts.version} -m ${opts.version}"
-                                sh "GIT_ASKPASS=true git push origin --tags"
+                        if (opts.pushGitTags && env.BRANCH_NAME == opts.master) {
+                            try {
+                                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-https',
+                                    usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD']]
+                                ) {
+                                    sh "git config user.email jenkins@${opts.domain}"
+                                    sh 'git config user.name jenkins'
+                                    sh "git config credential.username ${env.GIT_USERNAME}"
+                                    sh "git config credential.helper '!f() { echo password=\$GIT_PASSWORD; }; f'"
+                                    sh "git tag -a ${opts.version} -m ${opts.version}"
+                                    sh "GIT_ASKPASS=true git push origin --tags"
+                                }
+                            } catch (e) {
+                                notifySlack("ERROR Pushing git tag: ${e}")
+                                throw e
                             }
-                        } catch (e) {
-                            notifySlack("ERROR Pushing git tag: ${e}")
-                            throw e
                         }
                     }
                 }
@@ -192,6 +211,7 @@ Map _buildOpts(Map args) {
         kubeVersion: args.kubeVersion ?: opts.kubeVersion,
 
         pushGitTags: args.pushGitTags ?: opts.pushGitTags,
+        skipGitDiff: args.skipGitDiff ?: opts.skipGitDiff,
 
         testImage: args.testImage ?: opts.testImage,
         testVersion: args.testVersion ?: opts.testVersion,

@@ -19,6 +19,7 @@ def podOpts() {
 
         pushGitTags: false,
         skipAskProd: false,
+        skipGitDiff: false,
 
         testImage: 'alpine',
         testVersion: 'latest',
@@ -30,8 +31,8 @@ def checkReleaseName(prefix, suffix) {
     parts = suffix.tokenize('-');
     for (p = 0; p <= parts.size(); p++) {
         name = "${prefix}-" + parts[0..-1].join('-');
-        if (name.size() <= 53) return name;
+        if (name.size() <= 53) return name.replace('.', 'o');
         parts = parts[0..-2];
     }
-    return name;
+    return name.replace('.', 'o');
 }

@@ -3,6 +3,7 @@ master:
   cpu: 800m
   memory: 1Gi
   hostName: jenkins.$REGION.test.domain.net
+  priorityClassName: system-cluster-critical
   serviceType: ClusterIP
   serviceAnnotations:
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
@@ -12,13 +13,13 @@ master:
     - aws-credentials:1.28
     - blueocean:1.21.0
     - credentials-binding:1.20
-    - git:4.0.0
+    - git:4.1.1
     - google-login:1.6
-    - kubernetes:1.22.1
+    - kubernetes:1.23.1
     - pipeline-graph-analysis:1.10
     - pipeline-stage-view:2.12
     - slack:2.35
-    - ssh-agent:1.17
+    - ssh-agent:1.19
     - thinBackup:1.9
     - workflow-job:2.36
 
@@ -41,6 +42,7 @@ master:
     - "new java.util.LinkedHashMap"
     - "new groovy.json.JsonSlurperClassic"
     - "staticMethod org.codehaus.groovy.runtime.DateGroovyMethods minus java.util.Date int"
+    - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getAt java.util.List java.util.Collection"
     - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods println java.lang.Object java.lang.Object"
     - "staticMethod org.codehaus.groovy.transform.ImmutableASTTransformation checkPropNames java.lang.Object java.util.Map"
 
