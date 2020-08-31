@@ -1,0 +1,136 @@
+#!/usr/bin/env groovy
+
+import groovy.json.JsonSlurperClassic
+
+properties([
+    disableConcurrentBuilds(),
+    pipelineTriggers([cron('H */3 * * *')]),
+    parameters([
+        string(description: 'Region', name: 'region', defaultValue: 'us-east-1'),
+    ])
+])
+
+podTemplate(label: 'jenkins-cleanup', containers: [
+    containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
+    containerTemplate(name: 'kube', image: 'ikenticus/kubectl:1.15.0', command: 'cat', ttyEnabled: true)
+]) {
+    ansiColor('xterm') {
+        node ('jenkins-cleanup') {
+            currentBuild.description = "No kube items to clean"
+
+            stage ('Empty Replica Sets') {
+                container('kube') {
+                    def rsList = sh(returnStdout: true,
+                            script: "kubectl get rs --all-namespaces -o json"
+                        ).trim()
+                    def rsJson = new JsonSlurperClassic().parseText(rsList)
+                    for (rs in rsJson.items) {
+                        if (rs.spec.replicas < 1) {
+                            println "Removing ${rs.metadata.name} from ${rs.metadata.namespace}"
+                            sh "kubectl delete rs ${rs.metadata.name} -n ${rs.metadata.namespace}"
+                            currentBuild.description = "Deleted empty RS"
+                        }
+                    }
+                }
+            }
+
+            stage ('Clear Evicted Pods') {
+                container('kube') {
+                    def delete = false
+                    def podList = sh(returnStdout: true,
+                            script: "kubectl get pods --all-namespaces --field-selector status.phase=Failed -o json"
+                        ).trim()
+                    def podJson = new JsonSlurperClassic().parseText(podList)
+                    for (pod in podJson.items) {
+                        println "${pod.status.phase}\t${pod.metadata.name}"
+                        if (pod.status.phase == 'Failed') {
+                            delete = true
+                        }
+                    }
+                    if (delete) {
+                        println "One or more evicted pods discovered, deleting"
+                        sh "kubectl delete pods --all-namespaces --field-selector status.phase=Failed"
+                        currentBuild.description = "Cleared evicted pods"
+                    } else {
+                        println "No evicted pods discovered, skipping"
+                    }
+                }
+            }
+
+            stage ('Map EC2 Hosts') {
+                ec2 = [:] // map-dict
+                container('awscli') {
+                    def ec2List = sh(returnStdout: true,
+                        script: "aws ec2 describe-instances --region us-east-1"
+                    ).trim()
+                    def ec2Json = new JsonSlurperClassic().parseText(ec2List)
+                    for (r in ec2Json.Reservations) {
+                        for (i in r.Instances) {
+                            if (i.PublicIpAddress) {
+                                // println "${i.PrivateDnsName}\t${i.PublicIpAddress}"
+                                ec2[i.PrivateDnsName] = i.PublicIpAddress
+                                currentBuild.description = "Mapping EC2 instances"
+                            }
+                        }
+                    }
+                }
+                // ec2.each{ k, v -> println "${k} : ${v}" }
+                // for (w in ec2) {
+                //     println "${w.key} -> ${w.value}"
+                // }
+            }
+
+            stage ('Identify Failed Nodes') {
+                pods = []
+                nodes = []
+                // waiting = [:]    // define two lists because maps fail within sshagent below
+                container('kube') {
+                    def podList = sh(returnStdout: true,
+                            script: "kubectl get pods --selector=app=s3fs --namespace kube-system -o json"
+                        ).trim()
+                    def podJson = new JsonSlurperClassic().parseText(podList)
+                    for (pod in podJson.items) {
+                        if (pod.status.containerStatuses[0].state.running) {
+                            // println "Running: ${pod.spec.nodeName}\t${pod.metadata.name}"
+                            continue
+                        } else if (pod.status.containerStatuses[0].state.waiting) {
+                            // println "Waiting: ${pod.spec.nodeName}\t${pod.metadata.name}"
+                            if (pod.status.containerStatuses[0].state.waiting.reason == 'CrashLoopBackOff') {
+                                pods.push(pod.metadata.name)
+                                nodes.push(ec2[pod.spec.nodeName])
+                                currentBuild.description = "Found crashed nodes"
+                            }
+                        }
+                    }
+                }
+            }
+
+            stage ('Clear Failed Mounts') {
+                sshagent (credentials: ['jenkins-eks']) {
+                    for (n in nodes) {
+                        def mntList = sh(returnStdout: true,
+                                script: "ssh -o StrictHostKeyChecking=no -l ec2-user ${n} sudo mount"
+                            ).trim()
+                        for (mntLine in mntList.split('\n')) {
+                            def m = mntLine.tokenize()
+                            if (m[0] == 's3fs') {
+                                // println "${m[0]}\t${m[2]}"
+                                sh "ssh -o StrictHostKeyChecking=no -l ec2-user ${n} sudo umount -f ${m[2]}"
+                                currentBuild.description = "Cleared failed mnts"
+                            }
+                        }
+                    }
+                }
+            }
+
+            stage ('Clear Failed Daemon Sets') {
+                container('kube') {
+                    for (p in pods) {
+                        sh "kubectl delete pod --namespace kube-system ${p}"
+                        currentBuild.description = "Cleared failed DS"
+                    }
+                }
+            }
+        }
+    }
+}

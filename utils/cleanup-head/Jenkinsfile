@@ -1,23 +1,24 @@
 #!/usr/bin/env groovy
 
+@Library('canvas-pipeline') _
 import groovy.json.JsonSlurperClassic
 import java.text.SimpleDateFormat
 
 properties([
     disableConcurrentBuilds(),
-    pipelineTriggers([cron('H 4 * * *')]),
+    pipelineTriggers([cron('H */2 * * *')]),
     parameters([
-        string(description: 'Region', name: 'region', defaultValue: 'us-east-4'),
+        string(description: 'Region', name: 'region', defaultValue: 'us-east-1'),
         string(description: 'Namespace', name: 'namespace', defaultValue: 'test'),
         string(description: 'Repositories (ECR)', name: 'repos', defaultValue: '/s3fs,/test,/live'),
-        string(description: 'Days back (helm)', name: 'days', defaultValue: '14'),
-        string(description: 'Skip branches (helm)', name: 'skip', defaultValue: 'dev,development,qa,release-candidate'),
+        string(description: 'Days back (helm)', name: 'days', defaultValue: '-1'), // or positive number
+        string(description: 'Skip branches (helm)', name: 'skip', defaultValue: 'develop,qa,sandbox,prefix-'),
     ])
 ])
 
-podTemplate(label: 'jenkins-cleanup', containers: [
+podTemplate(label: 'jenkins-cleanup', nodeSelector: "partition=tools", containers: [
     containerTemplate(name: 'docker', image: 'docker:latest', command: 'cat', ttyEnabled: true),
-    containerTemplate(name: 'helm', image: 'alpine/helm:2.14.0', command: 'cat', ttyEnabled: true),
+    containerTemplate(name: 'helm', image: 'alpine/helm:3.1.2', command: 'cat', ttyEnabled: true),
     containerTemplate(name: 'awscli', image: 'ikenticus/awscli:latest', command: 'cat', ttyEnabled: true),
 ],
 volumes:[
@@ -25,6 +26,13 @@ volumes:[
 ]) {
     ansiColor('xterm') {
         node ('jenkins-cleanup') {
+
+            def raw = [:]       // map-dict
+            def twigs = []      // array-list
+
+            // when using 'repos' parameter instead of obtaining from ECR
+            //repoNames = repos.split(',')
+            repoNames = []
 
             stage('Cleaning docker') {
                 container('docker') {
@@ -34,47 +42,14 @@ volumes:[
                 }
             }
 
-            stage('Cleaning helm') {
-                container('helm') {
-                    // may need to upgrade tiller to access namespaces, depending on helm version
-                    //sh 'helm init'
-                    //sh 'helm init --service-account tiller --upgrade'
-
-                    def excludes = skip.split(',')
-                    def pastDate = new Date().minus(days.toInteger())
-                    try {
-                        def helmList = sh(returnStdout: true, script: "helm list --namespace ${namespace} --output json").trim()
-                        def helmJson = new JsonSlurperClassic().parseText(helmList)
-                        for (i = 0; i < helmJson.Releases.size(); i++) {
-                            def helmChart = helmJson.Releases[i].Name
-                            def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
-                            def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
-
-                            def helmPrefix = helmJson.Releases[i].Chart.tokenize('-')[0..-2].join('-')
-                            def helmBranch = helmChart.replace(helmPrefix+'-', '')
-                            if (excludes.contains(helmBranch)) {
-                                println "${helmChart} matches exclusion list"
-                            } else if (helmDate >= pastDate) {
-                                println "${helmChart} (${helmDate}) is newer than ${days} days"
-                            } else {
-                                println "${helmChart} (${helmDate}) is OLDER than ${days} days"
-                                sh "helm delete ${helmChart} --purge"
-                            }
-                        }
-                    } catch (e) {
-                        echo "No helm deployments found in ${namespace}"
-                    }
-                }
-            }
-
             stage('Cleaning ECR') {
                 container('awscli') {
                     def target = repos.split(',')
                     def repoList = sh(returnStdout: true,
                             script: "aws ecr describe-repositories --region ${region} --query repositories[].repositoryName"
                         ).trim()
+                    def repoJson = new JsonSlurperClassic().parseText(repoList)
                     try {
-                        def repoJson = new JsonSlurperClassic().parseText(repoList)
                         for (repo in repoJson) {
                             def valid = false
                             for (test in target) {
@@ -117,6 +92,105 @@ volumes:[
                     } catch (e) {
                         println "Error describing repositories from ${region}"
                         println(e)
+                    }
+
+                    if (days.toInteger() < 0) {
+                        for (repo in repoJson) {
+                            if (repo.endsWith("/${namespace}")) {
+                                repoNames.add(repo.replace("/${namespace}", ''))
+                            }
+                        }
+
+                        for (repoName in repoNames) {
+                            try {
+                                def twigList = sh(returnStdout: true, script: """
+                                    aws codecommit list-branches --region ${region} \
+                                        --repository-name ${repoName} --query branches[]
+                                """).trim()
+                                def twigJson = new JsonSlurperClassic().parseText(twigList)
+                                raw[repoName] = twigJson
+                            } catch (e) {
+                                println "Error listing branches from repoName, may be GitHub"
+                                println(e)
+                            }
+                        }
+
+                        for (r in raw) {
+                            for (v in r.value) {
+                                // toString() list items or it will fail list.contains(item) test below
+                                twigs.add(common.checkReleaseName(r.key, v.replace('_', '-').toLowerCase()).toString())
+                            }
+                        }
+                        //for (t in twigs) { println "=> ${t}" }
+                    }
+                }
+            }
+
+            stage('Cleaning helm') {
+                currentBuild.description = "No helm charts to clean"
+                container('helm') {
+                    // may need to upgrade tiller to access namespaces, depending on helm version
+                    //sh 'helm init'
+                    //sh 'helm init --service-account tiller --upgrade'
+
+                    def excludes = skip.split(',')
+                    if (days.toInteger() < 0) {
+                        def helmCall = sh(returnStdout: true, script: """
+                            helm list --namespace ${namespace} -q
+                        """).trim()
+                        def helmList = helmCall.split('\n')
+                        sh "helm list --namespace ${namespace}"
+
+                        def charts = []
+                        for (h in helmList) {
+                            for (repoName in repoNames) {
+                                if (h.startsWith(repoName)) {
+                                    charts.add(h)
+                                }
+                            }
+                        }
+                        for (c in charts) {
+                            def delete = true
+                            //println "checking ${c}"
+                            if (!twigs.contains(c)) {
+                                for (e in excludes) {
+                                    if (c.contains(e)) {
+                                        //println "${c} matches exclusion list"
+                                        delete = false
+                                    }
+                                }
+                                if (delete) {
+                                    //println "${c} should be deleted"
+                                    sh "helm delete --namespace ${namespace} ${c}"
+                                    currentBuild.description = "Deleted closed branches"
+                                }
+                            }
+                        }
+                    } else {
+                        def pastDate = new Date().minus(days.toInteger())
+                        try {
+                            def helmList = sh(returnStdout: true, script: "helm list --namespace ${namespace} --output json").trim()
+                            def helmJson = new JsonSlurperClassic().parseText(helmList)
+                            for (i = 0; i < helmJson.Releases.size(); i++) {
+                                def helmChart = helmJson.Releases[i].Name
+                                def helmFormat = new SimpleDateFormat("EEE MMM dd HH:mm:SS yyyy")
+                                def helmDate = helmFormat.parse(helmJson.Releases[i].Updated)
+
+                                def helmPrefix = helmJson.Releases[i].Chart.tokenize('-')[0..-2].join('-')
+                                def helmBranch = helmChart.replace(helmPrefix+'-', '')
+                                if (excludes.contains(helmBranch)) {
+                                    println "${helmChart} matches exclusion list"
+                                } else if (helmDate >= pastDate) {
+                                    println "${helmChart} (${helmDate}) is newer than ${days} days"
+                                } else {
+                                    println "${helmChart} (${helmDate}) is OLDER than ${days} days"
+                                    sh "helm delete --namespace ${namespace} ${helmChart}"
+                                    currentBuild.description = "Deleted old branches"
+                                }
+                            }
+                        } catch (e) {
+                            echo "No helm deployments found in ${namespace}"
+                        }
                     }
                 }
             }
