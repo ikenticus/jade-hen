@@ -168,6 +168,8 @@ def call(Map args) {
                             }
                         }
                         if (autodeploy) {
+                            // Pull Requests needs to get actual branch name not PR name
+                            if (env.CHANGE_BRANCH) opts.branch = env.CHANGE_BRANCH
                             println " Deploying ${opts.appName} ${opts.version} to ${opts.namespace}"
                             build job: "deploy-${opts.appName}", wait: false, parameters: [
                                 string(name: 'master', value: opts.master),
